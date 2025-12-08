@@ -45,8 +45,8 @@ A comprehensive Flask web application for managing Apache AGE graph databases in
    ```
 
 5. **Configure environment variables**
-   - Copy `.env.example` to `.env`
-   - Update with your credentials:
+   
+   - Update with your credentials .env`:
    ```env
    DATABASE_URL=postgresql://username:password@host:port/database
    AGE_ENABLED=true
@@ -813,3 +813,4 @@ This workflow ensures transparency and control while leveraging AI assistance.
 ## License
 
 MIT License
+
