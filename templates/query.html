@@ -1,0 +1,790 @@
+{% extends "base.html" %}
+
+{% block title %}Natural Language Query - AGE Graph Manager{% endblock %}
+
+{% block extra_css %}
+<style>
+    .query-container {
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    .cypher-preview {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 15px;
+        font-family: 'Courier New', monospace;
+        white-space: pre-wrap;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    .results-table {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+    .schema-info {
+        background-color: #e9ecef;
+        padding: 10px;
+        border-radius: 4px;
+        font-size: 0.9em;
+        font-family: monospace;
+        white-space: pre-wrap;
+    }
+    .loading {
+        display: none;
+    }
+    .loading.active {
+        display: block;
+    }
+    #graphVisualization {
+        width: 100%;
+        height: 500px;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        margin-top: 15px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid query-container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h1>Natural Language Query</h1>
+            <p class="text-muted">Ask questions about your graph in plain English</p>
+            
+            <!-- Graph Selection -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="row align-items-end">
+                        <div class="col-md-8">
+                            <label for="graphSelectorQuery" class="form-label"><strong>Select Graph:</strong></label>
+                            <select class="form-select" id="graphSelectorQuery">
+                                <option value="">-- Select a graph --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <button type="button" class="btn btn-success w-100" id="loadGraphBtnQuery">
+                                Load Graph
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mt-2" id="currentGraphDisplay">
+                        <span class="text-muted">Current: {{ current_graph if current_graph else 'None selected' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Query Input Section -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Ask Your Question</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="naturalQuery" class="form-label">Natural Language Query</label>
+                        <textarea 
+                            class="form-control" 
+                            id="naturalQuery" 
+                            rows="3" 
+                            placeholder="Example: Find all people who are older than 30
+Example: Show me products that cost more than 100
+Example: Get all relationships between companies and people"></textarea>
+                        <small class="form-text text-muted">
+                            Describe what you want to find in your graph using natural language
+                        </small>
+                    </div>
+                    
+                    <button type="button" class="btn btn-primary" id="translateBtn">
+                        <span class="spinner-border spinner-border-sm me-2 d-none" id="translateSpinner"></span>
+                        Translate to Cypher
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Translation Result Section -->
+    <div class="row mt-4" id="translationSection" style="display: none;">
+        <div class="col-12">
+            <div class="card border-success">
+                <div class="card-header bg-success bg-opacity-10 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">✅ Generated Cypher Query</h5>
+                    <button type="button" class="btn btn-sm btn-warning" id="editCypherBtn">
+                        ✏️ Edit Query Before Executing
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Explanation:</strong></label>
+                        <p id="queryExplanation" class="text-muted"></p>
+                    </div>
+                    
+                    <div class="mb-3" id="assumptionsDiv" style="display: none;">
+                        <label class="form-label"><strong>Assumptions:</strong></label>
+                        <p id="queryAssumptions" class="text-warning"></p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label"><strong>OpenCypher Query:</strong></label>
+                        <div id="cypherPreview" class="cypher-preview"></div>
+                        <textarea 
+                            class="form-control mt-2" 
+                            id="cypherEdit" 
+                            rows="8" 
+                            style="display: none; font-family: 'Courier New', monospace; font-size: 0.9em;"></textarea>
+                    </div>
+                    
+                    <div class="d-flex gap-2 align-items-center">
+                        <button type="button" class="btn btn-success" id="executeBtn">
+                            <span class="spinner-border spinner-border-sm me-2 d-none" id="executeSpinner"></span>
+                            ▶️ Execute Query
+                        </button>
+                        <button type="button" class="btn btn-primary" id="saveCypherBtn" style="display: none;">
+                            💾 Save Changes
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="cancelEditBtn" style="display: none;">
+                            ❌ Cancel Edit
+                        </button>
+                        <small class="text-muted ms-3">
+                            💡 You can edit the query before executing it
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Section -->
+    <div class="row mt-4" id="resultsSection" style="display: none;">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5>Query Results</h5>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button type="button" class="btn btn-outline-primary active" id="tableViewBtn">
+                            📊 Table View
+                        </button>
+                        <button type="button" class="btn btn-outline-primary" id="graphViewBtn">
+                            🔗 Graph View
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="resultsContainer"></div>
+                    <div id="graphVisualizationContainer" style="display: none;">
+                        <div id="graphVisualization"></div>
+                        <small class="text-muted mt-2 d-block">
+                            <strong>Tip:</strong> Click and drag nodes to rearrange, scroll to zoom
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Graph Schema Info (Collapsible) -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <button class="btn btn-link text-decoration-none p-0" type="button" data-bs-toggle="collapse" data-bs-target="#schemaCollapse">
+                        <h6 class="mb-0">📊 View Graph Schema (helpful for writing queries)</h6>
+                    </button>
+                </div>
+                <div class="collapse" id="schemaCollapse">
+                    <div class="card-body">
+                        <div id="schemaInfo" class="schema-info">Loading schema...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Example Queries -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h6>💡 Example Queries</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="text-muted small">General Queries:</h6>
+                            <button class="btn btn-sm btn-outline-primary mb-2 example-query" 
+                                    data-query="Find all nodes">
+                                Find all nodes
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary mb-2 example-query" 
+                                    data-query="Show me all relationships in the graph">
+                                Show me all relationships
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary mb-2 example-query" 
+                                    data-query="Get nodes with more than 2 connections">
+                                Get nodes with more than 2 connections
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary mb-2 example-query" 
+                                    data-query="Count how many nodes of each type exist">
+                                Count nodes by type
+                            </button>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-muted small">Road Graph Queries:</h6>
+                            <button class="btn btn-sm btn-outline-success mb-2 example-query" 
+                                    data-query="Find all cities">
+                                Find all cities
+                            </button>
+                            <button class="btn btn-sm btn-outline-success mb-2 example-query" 
+                                    data-query="Show all highways between cities">
+                                Show all highways
+                            </button>
+                            <button class="btn btn-sm btn-outline-success mb-2 example-query" 
+                                    data-query="Find cities with more than 3 road connections">
+                                Find highly connected cities
+                            </button>
+                            <button class="btn btn-sm btn-outline-success mb-2 example-query" 
+                                    data-query="Find the shortest path between New York and Los Angeles">
+                                Shortest path (NY to LA)
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Shortest Path Sample -->
+                    <div class="mt-3">
+                        <h6 class="text-primary">📍 Advanced: Shortest Path Query Template</h6>
+                        <small class="text-muted">Copy and modify this template for finding shortest paths in the road graph:</small>
+                        <pre class="bg-light p-3 mt-2 border rounded" style="font-size: 0.85em;"><code>SELECT * FROM cypher('road', $$
+    MATCH paths = (a:City {name: 'New York'})-[r*1..6]-(b:City {name: 'Los Angeles'})
+    WITH paths, relationships(paths) AS rels
+    UNWIND rels AS rel
+    WITH nodes(paths) AS nodes,
+        collect(rel.name) AS Name,
+        sum(rel.time) AS travelTime
+    RETURN nodes, Name, travelTime
+$$) AS (metros agtype, Name agtype, travelTime agtype)
+ORDER BY travelTime;</code></pre>
+                        <small class="text-info">💡 Tip: This matches ANY road type (Highway or Normal). After generating a query, click "Edit Query" to modify city names or add filters before execution.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentCypherQuery = '';
+
+// Load list of available graphs
+async function loadGraphsList() {
+    try {
+        const response = await fetch('/api/graphs');
+        const data = await response.json();
+        
+        if (data.success && data.graphs) {
+            const selector = document.getElementById('graphSelectorQuery');
+            selector.innerHTML = '<option value="">-- Select a graph --</option>';
+            
+            data.graphs.forEach(graph => {
+                const option = document.createElement('option');
+                option.value = graph;
+                option.textContent = graph;
+                selector.appendChild(option);
+            });
+            
+            // Set current graph if available
+            const currentGraph = '{{ current_graph }}';
+            if (currentGraph && currentGraph !== 'None') {
+                selector.value = currentGraph;
+            }
+        }
+    } catch (error) {
+        console.error('Error loading graphs:', error);
+    }
+}
+
+// Select a graph
+async function selectGraph(graphName) {
+    try {
+        const response = await fetch('/api/graphs/select', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ graph_name: graphName })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            document.getElementById('currentGraphDisplay').innerHTML = 
+                `<strong class="text-success">Current: ${graphName}</strong>`;
+            // Reload schema for new graph
+            loadGraphSchema();
+        } else {
+            alert('Error: ' + (result.error || 'Failed to select graph'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+// Load graph schema on page load
+async function loadGraphSchema() {
+    try {
+        const response = await fetch('/api/graph-data');
+        const data = await response.json();
+        
+        if (data.success && data.nodes && data.edges) {
+            // Extract schema information
+            const nodeTypes = new Set();
+            const edgeTypes = new Set();
+            const nodeSample = {};
+            const edgeSample = {};
+            
+            // Analyze nodes
+            data.nodes.slice(0, 20).forEach(node => {
+                try {
+                    const nodeStr = node[0].split('::')[0].trim();
+                    const nodeData = JSON.parse(nodeStr);
+                    const label = nodeData.label || 'Unknown';
+                    nodeTypes.add(label);
+                    
+                    if (!nodeSample[label]) {
+                        nodeSample[label] = Object.keys(nodeData.properties || {});
+                    }
+                } catch (e) {
+                    console.error('Error parsing node:', e);
+                }
+            });
+            
+            // Analyze edges
+            data.edges.slice(0, 20).forEach(edge => {
+                try {
+                    const edgeStr = edge[1].split('::')[0].trim();
+                    const edgeData = JSON.parse(edgeStr);
+                    const label = edgeData.label || 'Unknown';
+                    edgeTypes.add(label);
+                    
+                    if (!edgeSample[label]) {
+                        edgeSample[label] = Object.keys(edgeData.properties || {});
+                    }
+                } catch (e) {
+                    console.error('Error parsing edge:', e);
+                }
+            });
+            
+            // Build schema display
+            let schemaText = `Node Types (${nodeTypes.size}):\n`;
+            nodeTypes.forEach(type => {
+                const props = nodeSample[type] || [];
+                schemaText += `  • ${type}${props.length > 0 ? ': ' + props.join(', ') : ''}\n`;
+            });
+            
+            schemaText += `\nRelationship Types (${edgeTypes.size}):\n`;
+            edgeTypes.forEach(type => {
+                const props = edgeSample[type] || [];
+                schemaText += `  • ${type}${props.length > 0 ? ': ' + props.join(', ') : ''}\n`;
+            });
+            
+            document.getElementById('schemaInfo').textContent = schemaText;
+        } else {
+            document.getElementById('schemaInfo').textContent = 'No schema information available';
+        }
+    } catch (error) {
+        document.getElementById('schemaInfo').textContent = `Error loading schema: ${error.message}`;
+    }
+}
+
+// Translate natural language to Cypher
+document.getElementById('translateBtn').addEventListener('click', async function() {
+    const naturalQuery = document.getElementById('naturalQuery').value.trim();
+    
+    if (!naturalQuery) {
+        alert('Please enter a query');
+        return;
+    }
+    
+    const spinner = document.getElementById('translateSpinner');
+    const btn = this;
+    btn.disabled = true;
+    spinner.classList.remove('d-none');
+    
+    try {
+        const response = await fetch('/api/natural-query/translate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ query: naturalQuery })
+        });
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            alert('Error: ' + result.error);
+            return;
+        }
+        
+        if (result.success) {
+            currentCypherQuery = result.cypher;
+            document.getElementById('cypherPreview').textContent = result.cypher;
+            document.getElementById('cypherEdit').value = result.cypher;
+            document.getElementById('queryExplanation').textContent = result.explanation;
+            
+            if (result.assumptions) {
+                document.getElementById('queryAssumptions').textContent = result.assumptions;
+                document.getElementById('assumptionsDiv').style.display = 'block';
+            } else {
+                document.getElementById('assumptionsDiv').style.display = 'none';
+            }
+            
+            document.getElementById('translationSection').style.display = 'block';
+            document.getElementById('resultsSection').style.display = 'none';
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    } finally {
+        btn.disabled = false;
+        spinner.classList.add('d-none');
+    }
+});
+
+// Execute Cypher query
+document.getElementById('executeBtn').addEventListener('click', async function() {
+    const spinner = document.getElementById('executeSpinner');
+    const btn = this;
+    btn.disabled = true;
+    spinner.classList.remove('d-none');
+    
+    try {
+        const response = await fetch('/api/natural-query/execute', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ cypher: currentCypherQuery })
+        });
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            document.getElementById('resultsContainer').innerHTML = 
+                `<div class="alert alert-danger">Error: ${result.error}</div>`;
+        } else {
+            displayResults(result.result || []);
+        }
+        
+        document.getElementById('resultsSection').style.display = 'block';
+    } catch (error) {
+        document.getElementById('resultsContainer').innerHTML = 
+            `<div class="alert alert-danger">Error: ${error.message}</div>`;
+        document.getElementById('resultsSection').style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        spinner.classList.add('d-none');
+    }
+});
+
+// Display query results
+function displayResults(results) {
+    const container = document.getElementById('resultsContainer');
+    
+    // Store results for graph visualization
+    currentResults = results;
+    
+    if (!results || results.length === 0) {
+        container.innerHTML = '<p class="text-muted">No results found</p>';
+        return;
+    }
+    
+    let html = `<p class="text-success"><strong>Found ${results.length} result(s)</strong></p>`;
+    html += '<div class="results-table"><table class="table table-striped table-sm">';
+    html += '<thead><tr><th>#</th><th>Result</th></tr></thead><tbody>';
+    
+    results.forEach((row, idx) => {
+        try {
+            let displayValue = '';
+            if (Array.isArray(row)) {
+                displayValue = row.map(item => {
+                    try {
+                        // Try to parse AGE format
+                        const cleanStr = String(item).split('::')[0].trim();
+                        const parsed = JSON.parse(cleanStr);
+                        return JSON.stringify(parsed, null, 2);
+                    } catch {
+                        return String(item);
+                    }
+                }).join(' | ');
+            } else {
+                displayValue = JSON.stringify(row, null, 2);
+            }
+            
+            html += `<tr><td>${idx + 1}</td><td><pre class="mb-0">${displayValue}</pre></td></tr>`;
+        } catch (e) {
+            html += `<tr><td>${idx + 1}</td><td>${JSON.stringify(row)}</td></tr>`;
+        }
+    });
+    
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+}
+
+// Edit Cypher button
+document.getElementById('editCypherBtn').addEventListener('click', function() {
+    document.getElementById('cypherPreview').style.display = 'none';
+    document.getElementById('cypherEdit').style.display = 'block';
+    document.getElementById('saveCypherBtn').style.display = 'inline-block';
+    document.getElementById('cancelEditBtn').style.display = 'inline-block';
+    this.style.display = 'none';
+});
+
+// Save edited Cypher
+document.getElementById('saveCypherBtn').addEventListener('click', function() {
+    currentCypherQuery = document.getElementById('cypherEdit').value;
+    document.getElementById('cypherPreview').textContent = currentCypherQuery;
+    document.getElementById('cypherPreview').style.display = 'block';
+    document.getElementById('cypherEdit').style.display = 'none';
+    document.getElementById('editCypherBtn').style.display = 'inline-block';
+    this.style.display = 'none';
+    document.getElementById('cancelEditBtn').style.display = 'none';
+});
+
+// Cancel edit
+document.getElementById('cancelEditBtn').addEventListener('click', function() {
+    document.getElementById('cypherEdit').value = currentCypherQuery;
+    document.getElementById('cypherPreview').style.display = 'block';
+    document.getElementById('cypherEdit').style.display = 'none';
+    document.getElementById('editCypherBtn').style.display = 'inline-block';
+    document.getElementById('saveCypherBtn').style.display = 'none';
+    this.style.display = 'none';
+});
+
+// Example queries
+document.querySelectorAll('.example-query').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.getElementById('naturalQuery').value = this.dataset.query;
+        document.getElementById('naturalQuery').focus();
+    });
+});
+
+// Load graph button
+document.getElementById('loadGraphBtnQuery').addEventListener('click', function() {
+    const selectedGraph = document.getElementById('graphSelectorQuery').value;
+    if (selectedGraph) {
+        selectGraph(selectedGraph);
+    } else {
+        alert('Please select a graph first');
+    }
+});
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', async function() {
+    await loadGraphsList();
+    
+    // Check if a graph is already selected
+    const currentGraph = '{{ current_graph }}';
+    if (currentGraph && currentGraph !== 'None') {
+        document.getElementById('graphSelectorQuery').value = currentGraph;
+        loadGraphSchema();
+    }
+});
+
+// View toggle buttons
+let currentResults = [];
+let graphNetwork = null;
+
+document.getElementById('tableViewBtn').addEventListener('click', function() {
+    document.getElementById('resultsContainer').style.display = 'block';
+    document.getElementById('graphVisualizationContainer').style.display = 'none';
+    this.classList.add('active');
+    document.getElementById('graphViewBtn').classList.remove('active');
+});
+
+document.getElementById('graphViewBtn').addEventListener('click', function() {
+    document.getElementById('resultsContainer').style.display = 'none';
+    document.getElementById('graphVisualizationContainer').style.display = 'block';
+    this.classList.add('active');
+    document.getElementById('tableViewBtn').classList.remove('active');
+    
+    // Render graph if we have results
+    if (currentResults && currentResults.length > 0) {
+        renderGraphVisualization(currentResults);
+    }
+});
+
+// Render graph visualization from query results
+function renderGraphVisualization(results) {
+    const container = document.getElementById('graphVisualization');
+    
+    const nodes = new vis.DataSet();
+    const edges = new vis.DataSet();
+    const nodeMap = new Map();
+    
+    // Parse results and extract nodes and edges
+    results.forEach(row => {
+        try {
+            // Handle array of items in row
+            if (Array.isArray(row)) {
+                row.forEach(item => {
+                    try {
+                        // Parse the AGE format string
+                        const itemStr = String(item);
+                        const cleanStr = itemStr.split('::')[0].trim();
+                        const parsed = JSON.parse(cleanStr);
+                        
+                        // Check if it's a node (vertex)
+                        if (parsed.id !== undefined && parsed.label && !parsed.start_id && !parsed.end_id) {
+                            if (!nodeMap.has(parsed.id)) {
+                                const nodeLabel = parsed.properties?.name || parsed.label || `ID: ${parsed.id}`;
+                                nodes.add({
+                                    id: parsed.id,
+                                    label: nodeLabel,
+                                    title: `${parsed.label}\n${JSON.stringify(parsed.properties || {}, null, 2)}`,
+                                    color: getColorForLabel(parsed.label),
+                                    shape: 'dot',
+                                    size: 25,
+                                    font: { size: 14, color: '#000000' }
+                                });
+                                nodeMap.set(parsed.id, true);
+                            }
+                        }
+                        // Check if it's an edge
+                        else if (parsed.start_id !== undefined && parsed.end_id !== undefined) {
+                            // Ensure both nodes exist
+                            if (!nodeMap.has(parsed.start_id)) {
+                                nodes.add({
+                                    id: parsed.start_id,
+                                    label: `ID: ${parsed.start_id}`,
+                                    color: '#95A5A6',
+                                    shape: 'dot',
+                                    size: 20
+                                });
+                                nodeMap.set(parsed.start_id, true);
+                            }
+                            if (!nodeMap.has(parsed.end_id)) {
+                                nodes.add({
+                                    id: parsed.end_id,
+                                    label: `ID: ${parsed.end_id}`,
+                                    color: '#95A5A6',
+                                    shape: 'dot',
+                                    size: 20
+                                });
+                                nodeMap.set(parsed.end_id, true);
+                            }
+                            
+                            const edgeLabel = parsed.label || '';
+                            const edgeProps = parsed.properties || {};
+                            let edgeLabelText = edgeLabel;
+                            
+                            // Add km and time info if available
+                            if (edgeProps.km && edgeProps.time) {
+                                edgeLabelText += `\n${edgeProps.km}km, ${edgeProps.time}h`;
+                            }
+                            
+                            edges.add({
+                                id: parsed.id,
+                                from: parsed.start_id,
+                                to: parsed.end_id,
+                                label: edgeLabelText,
+                                title: `${edgeLabel}\n${JSON.stringify(edgeProps, null, 2)}`,
+                                arrows: 'to',
+                                color: getEdgeColorForLabel(edgeLabel),
+                                width: 2
+                            });
+                        }
+                    } catch (e) {
+                        console.log('Error parsing item:', item, e);
+                    }
+                });
+            }
+        } catch (e) {
+            console.error('Error parsing row for graph:', e);
+        }
+    });
+    
+    console.log('Graph data - Nodes:', nodes.length, 'Edges:', edges.length);
+    
+    if (nodes.length === 0) {
+        container.innerHTML = '<div class="alert alert-info m-3">No graph nodes found in results. Make sure your query returns nodes (vertices) or edges.</div>';
+        return;
+    }
+    
+    // Create the network
+    const data = { nodes, edges };
+    const options = {
+        physics: {
+            enabled: true,
+            barnesHut: {
+                gravitationalConstant: -8000,
+                centralGravity: 0.3,
+                springLength: 150,
+                springConstant: 0.04
+            },
+            stabilization: {
+                enabled: true,
+                iterations: 200
+            }
+        },
+        nodes: {
+            font: {
+                size: 14,
+                color: '#000000'
+            },
+            borderWidth: 2
+        },
+        edges: {
+            width: 2,
+            smooth: {
+                type: 'continuous'
+            },
+            font: {
+                size: 12,
+                align: 'middle'
+            }
+        },
+        interaction: {
+            hover: true,
+            tooltipDelay: 100,
+            zoomView: true,
+            dragView: true
+        }
+    };
+    
+    if (graphNetwork) {
+        graphNetwork.destroy();
+    }
+    
+    graphNetwork = new vis.Network(container, data, options);
+}
+
+// Color helper functions
+function getColorForLabel(label) {
+    const colors = {
+        'City': '#E74C3C',
+        'Person': '#2ECC71',
+        'Product': '#3498DB',
+        'Company': '#F39C12',
+        'Place': '#E67E22',
+        'User': '#9B59B6',
+        'Customer': '#1ABC9C'
+    };
+    return colors[label] || '#95A5A6';
+}
+
+function getEdgeColorForLabel(label) {
+    const colors = {
+        'Highway': '#E74C3C',
+        'Normal': '#3498DB',
+        'KNOWS': '#2ECC71',
+        'WORKS_AT': '#9B59B6',
+        'PURCHASED': '#F39C12'
+    };
+    return colors[label] || '#7F8C8D';
+}
+
+</script>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+{% endblock %}

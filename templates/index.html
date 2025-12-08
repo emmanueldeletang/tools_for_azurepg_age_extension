@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}Home - AGE Graph Manager{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1 class="mb-4">Apache AGE Graph Database Manager</h1>
+        
+        <!-- Graph Selection Section -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Graph Selection</h5>
+                {% if current_graph %}
+                    <div class="alert alert-success">
+                        <strong>Current Graph:</strong> {{ current_graph }}
+                    </div>
+                {% else %}
+                    <div class="alert alert-warning">
+                        <strong>No graph selected.</strong> Please select or create a graph below.
+                    </div>
+                {% endif %}
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Select Existing Graph</h6>
+                        <div id="graphsList" class="mb-3">
+                            <p class="text-muted">Loading graphs...</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Create New Graph</h6>
+                        <form id="createGraphForm">
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="newGraphName" placeholder="Enter graph name" required>
+                                <button class="btn btn-primary" type="submit">Create Graph</button>
+                            </div>
+                        </form>
+                        <div id="createGraphResult" class="mt-2"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <p class="lead">Manage your graph database with nodes and edges.</p>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Nodes</h5>
+                <p class="card-text">Create and manage nodes in your graph. Add labels and properties to represent entities.</p>
+                <a href="{{ url_for('nodes') }}" class="btn btn-primary {% if not current_graph %}disabled{% endif %}">Manage Nodes</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Edges</h5>
+                <p class="card-text">Create relationships between nodes. Define edge types and properties to represent connections.</p>
+                <a href="{{ url_for('edges') }}" class="btn btn-primary {% if not current_graph %}disabled{% endif %}">Manage Edges</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Graph Visualization</h5>
+                <p class="card-text">View your graph data in an interactive visualization showing nodes and relationships.</p>
+                <a href="{{ url_for('graph') }}" class="btn btn-primary {% if not current_graph %}disabled{% endif %}">View Graph</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-5">
+    <div class="col-md-12">
+        <h3>Getting Started</h3>
+        <ol>
+            <li>Make sure you've run the database initialization script: <code>python database/init_graph.py</code></li>
+            <li>Select an existing graph or create a new one above</li>
+            <li>Create nodes with labels and properties</li>
+            <li>Connect nodes with edges (relationships)</li>
+            <li>Visualize your graph structure</li>
+        </ol>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadGraphs();
+    
+    // Load available graphs
+    async function loadGraphs() {
+        try {
+            const response = await fetch('/api/graphs');
+            const result = await response.json();
+            const graphsList = document.getElementById('graphsList');
+            
+            if (result.error) {
+                graphsList.innerHTML = `<p class="text-danger">${result.error}</p>`;
+            } else if (result.graphs && result.graphs.length > 0) {
+                graphsList.innerHTML = '<div class="list-group">' + 
+                    result.graphs.map(graph => 
+                        `<button class="list-group-item list-group-item-action select-graph" data-graph="${graph}">
+                            ${graph}
+                        </button>`
+                    ).join('') + '</div>';
+                
+                // Add click handlers
+                document.querySelectorAll('.select-graph').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        selectGraph(this.dataset.graph);
+                    });
+                });
+            } else {
+                graphsList.innerHTML = '<p class="text-muted">No graphs found. Create one to get started.</p>';
+            }
+        } catch (error) {
+            document.getElementById('graphsList').innerHTML = 
+                `<p class="text-danger">Error loading graphs: ${error.message}</p>`;
+        }
+    }
+    
+    // Select a graph
+    async function selectGraph(graphName) {
+        try {
+            const response = await fetch('/api/graphs/select', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ graph_name: graphName })
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                alert('Error: ' + result.error);
+            } else {
+                window.location.reload();
+            }
+        } catch (error) {
+            alert('Error selecting graph: ' + error.message);
+        }
+    }
+    
+    // Create new graph
+    document.getElementById('createGraphForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const graphName = document.getElementById('newGraphName').value.trim();
+        const resultDiv = document.getElementById('createGraphResult');
+        
+        try {
+            const response = await fetch('/api/graphs', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ graph_name: graphName })
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                resultDiv.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+            } else {
+                resultDiv.innerHTML = `<div class="alert alert-success">${result.message}</div>`;
+                document.getElementById('newGraphName').value = '';
+                setTimeout(() => {
+                    selectGraph(graphName);
+                }, 1000);
+            }
+        } catch (error) {
+            resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,393 @@
+{% extends "base.html" %}
+
+{% block title %}Nodes - AGE Graph Manager{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-md-12">
+        <!-- Graph selector -->
+        <div class="card">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <label for="graphSelectorNodes" class="form-label mb-0"><strong>Select Graph:</strong></label>
+                        <select class="form-select" id="graphSelectorNodes">
+                            <option value="">-- Select a graph --</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <button class="btn btn-primary mt-4" id="loadGraphBtnNodes">Load Graph</button>
+                        <span id="currentGraphDisplay" class="ms-3 text-muted"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <h2>Create Node</h2>
+        <form id="nodeForm">
+            <div class="mb-3">
+                <label for="nodeLabel" class="form-label">Label *</label>
+                <input type="text" class="form-control" id="nodeLabel" required placeholder="e.g., Person, Product, Location">
+                <small class="form-text text-muted">The type or category of the node</small>
+            </div>
+            
+            <div class="mb-3">
+                <label class="form-label">Properties</label>
+                <div id="propertiesContainer">
+                    <div class="row mb-2 property-row">
+                        <div class="col-5">
+                            <input type="text" class="form-control property-key" placeholder="Key (e.g., name)">
+                        </div>
+                        <div class="col-5">
+                            <input type="text" class="form-control property-value" placeholder="Value">
+                        </div>
+                        <div class="col-2">
+                            <button type="button" class="btn btn-sm btn-danger remove-property">Remove</button>
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-secondary" id="addProperty">Add Property</button>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">Create Node</button>
+        </form>
+        
+        <div id="nodeResult" class="mt-3"></div>
+    </div>
+    
+    <div class="col-md-6">
+        <h2>Existing Nodes</h2>
+        <div class="mb-3">
+            <input type="text" class="form-control" id="filterLabel" placeholder="Filter by label">
+        </div>
+        <div id="nodesList" class="list-group">
+            <p class="text-muted">Loading nodes...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Declare functions in outer scope
+async function loadGraphsList() {
+    try {
+        const response = await fetch('/api/graphs');
+        const result = await response.json();
+        const selector = document.getElementById('graphSelectorNodes');
+        
+        if (result.error) {
+            selector.innerHTML = '<option value="">Error loading graphs</option>';
+        } else if (result.graphs && result.graphs.length > 0) {
+            const options = '<option value="">-- Select a graph --</option>' +
+                result.graphs.map(graph => 
+                    `<option value="${graph}">${graph}</option>`
+                ).join('');
+            selector.innerHTML = options;
+            
+            // Set current graph if available
+            const currentGraph = '{{ current_graph }}';
+            if (currentGraph && currentGraph !== 'None') {
+                selector.value = currentGraph;
+            }
+        } else {
+            selector.innerHTML = '<option value="">No graphs available</option>';
+        }
+    } catch (error) {
+        console.error('Error loading graphs:', error);
+    }
+}
+
+async function selectGraph(graphName) {
+    try {
+        const response = await fetch('/api/graphs/select', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ graph_name: graphName })
+        });
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            alert('Error: ' + result.error);
+        } else {
+            document.getElementById('currentGraphDisplay').innerHTML = `<strong>Current: ${graphName}</strong>`;
+            loadNodes();
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+// Load nodes
+async function loadNodes(label = null) {
+    const url = label ? `/api/nodes?label=${label}` : '/api/nodes';
+    try {
+        const response = await fetch(url);
+        
+        // Check if response is JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            // Received HTML instead of JSON - likely redirected
+            document.getElementById('nodesList').innerHTML = 
+                `<p class="text-warning">No graph selected. Please select a graph from the <a href="/">home page</a>.</p>`;
+            return;
+        }
+        
+        const result = await response.json();
+        const nodesList = document.getElementById('nodesList');
+        
+        if (result.error) {
+            nodesList.innerHTML = `<p class="text-danger">${result.error}</p>`;
+        } else if (result.result && result.result.length > 0) {
+            nodesList.innerHTML = result.result.map(node => {
+                try {
+                    // Parse the node data from AGE format - remove type annotation
+                    const nodeStr = node[0].split('::')[0].trim();
+                    const nodeData = JSON.parse(nodeStr);
+                    const nodeLabel = nodeData.label || 'Node';
+                    const nodeId = nodeData.id;
+                    const properties = nodeData.properties || {};
+                    
+                    return `<div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong>${nodeLabel}</strong> (ID: ${nodeId})
+                                <div class="small text-muted">Properties: ${JSON.stringify(properties)}</div>
+                            </div>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button class="btn btn-outline-primary" onclick="editNode(${nodeId}, '${nodeLabel}', ${JSON.stringify(properties).replace(/"/g, '&quot;')})">Edit</button>
+                                <button class="btn btn-outline-danger" onclick="deleteNode(${nodeId})">Delete</button>
+                            </div>
+                        </div>
+                    </div>`;
+                } catch (e) {
+                    console.error('Error parsing node:', e);
+                    return `<div class="list-group-item list-group-item-danger">Error parsing node</div>`;
+                }
+            }).join('');
+        } else {
+            nodesList.innerHTML = '<p class="text-muted">No nodes found</p>';
+        }
+    } catch (error) {
+        document.getElementById('nodesList').innerHTML = 
+            `<p class="text-danger">Error loading nodes: ${error.message}</p>`;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', async function() {
+    // Load available graphs first
+    await loadGraphsList();
+    
+    // Check if a graph is already selected in session
+    const currentGraph = '{{ current_graph }}';
+    if (currentGraph && currentGraph !== 'None') {
+        document.getElementById('graphSelectorNodes').value = currentGraph;
+        document.getElementById('currentGraphDisplay').innerHTML = `<strong>Current: ${currentGraph}</strong>`;
+        loadNodes();
+    } else {
+        document.getElementById('nodesList').innerHTML = '<p class="text-warning">Please select a graph above to view nodes.</p>';
+    }
+    
+    // Load graph button
+    document.getElementById('loadGraphBtnNodes').addEventListener('click', function() {
+        const selectedGraph = document.getElementById('graphSelectorNodes').value;
+        if (selectedGraph) {
+            selectGraph(selectedGraph);
+        } else {
+            alert('Please select a graph first');
+        }
+    });
+    
+    // Add property functionality
+    document.getElementById('addProperty').addEventListener('click', function() {
+        const container = document.getElementById('propertiesContainer');
+        const row = document.createElement('div');
+        row.className = 'row mb-2 property-row';
+        row.innerHTML = `
+            <div class="col-5">
+                <input type="text" class="form-control property-key" placeholder="Key">
+            </div>
+            <div class="col-5">
+                <input type="text" class="form-control property-value" placeholder="Value">
+            </div>
+            <div class="col-2">
+                <button type="button" class="btn btn-sm btn-danger remove-property">Remove</button>
+            </div>
+        `;
+        container.appendChild(row);
+    });
+    
+    // Remove property functionality
+    document.getElementById('propertiesContainer').addEventListener('click', function(e) {
+        if (e.target.classList.contains('remove-property')) {
+            e.target.closest('.property-row').remove();
+        }
+    });
+    
+    // Submit form
+    document.getElementById('nodeForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const form = e.target;
+        const isUpdateMode = form.dataset.mode === 'update';
+        const nodeId = form.dataset.nodeId;
+        
+        const label = document.getElementById('nodeLabel').value;
+        const properties = {};
+        
+        document.querySelectorAll('.property-row').forEach(row => {
+            const key = row.querySelector('.property-key').value.trim();
+            const value = row.querySelector('.property-value').value.trim();
+            if (key && value) {
+                properties[key] = value;
+            }
+        });
+        
+        try {
+            let response;
+            if (isUpdateMode) {
+                // Update existing node
+                response = await fetch(`/api/nodes/${nodeId}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ properties })
+                });
+            } else {
+                // Create new node
+                response = await fetch('/api/nodes', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ label, properties })
+                });
+            }
+            
+            const result = await response.json();
+            const resultDiv = document.getElementById('nodeResult');
+            
+            if (result.error) {
+                resultDiv.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+            } else {
+                const message = isUpdateMode ? 'Node updated successfully!' : 'Node created successfully!';
+                resultDiv.innerHTML = `<div class="alert alert-success">${message}</div>`;
+                
+                if (isUpdateMode) {
+                    cancelEdit();
+                } else {
+                    document.getElementById('nodeForm').reset();
+                }
+                
+                loadNodes();
+            }
+        } catch (error) {
+            document.getElementById('nodeResult').innerHTML = 
+                `<div class="alert alert-danger">Error: ${error.message}</div>`;
+        }
+    });
+    
+    // Filter nodes
+    document.getElementById('filterLabel').addEventListener('input', function(e) {
+        const label = e.target.value.trim();
+        loadNodes(label || null);
+    });
+});
+
+// Edit node function
+function editNode(nodeId, nodeLabel, properties) {
+    // Populate the form with existing data
+    document.getElementById('nodeLabel').value = nodeLabel;
+    
+    // Clear and populate properties
+    const container = document.getElementById('propertiesContainer');
+    container.innerHTML = '';
+    
+    Object.entries(properties).forEach(([key, value]) => {
+        const propertyRow = document.createElement('div');
+        propertyRow.className = 'row mb-2 property-row';
+        propertyRow.innerHTML = `
+            <div class="col-5">
+                <input type="text" class="form-control property-key" value="${key}" placeholder="Key">
+            </div>
+            <div class="col-5">
+                <input type="text" class="form-control property-value" value="${value}" placeholder="Value">
+            </div>
+            <div class="col-2">
+                <button type="button" class="btn btn-sm btn-danger remove-property">Remove</button>
+            </div>
+        `;
+        container.appendChild(propertyRow);
+    });
+    
+    // Change form to update mode
+    const form = document.getElementById('nodeForm');
+    form.dataset.mode = 'update';
+    form.dataset.nodeId = nodeId;
+    
+    // Change button text
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.textContent = 'Update Node';
+    submitBtn.className = 'btn btn-warning';
+    
+    // Add cancel button
+    let cancelBtn = document.getElementById('cancelEditBtn');
+    if (!cancelBtn) {
+        cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.id = 'cancelEditBtn';
+        cancelBtn.className = 'btn btn-secondary ms-2';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.onclick = cancelEdit;
+        submitBtn.parentNode.appendChild(cancelBtn);
+    }
+    
+    // Scroll to form
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// Cancel edit function
+function cancelEdit() {
+    const form = document.getElementById('nodeForm');
+    form.reset();
+    delete form.dataset.mode;
+    delete form.dataset.nodeId;
+    
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.textContent = 'Create Node';
+    submitBtn.className = 'btn btn-primary';
+    
+    const cancelBtn = document.getElementById('cancelEditBtn');
+    if (cancelBtn) {
+        cancelBtn.remove();
+    }
+}
+
+// Delete node function
+async function deleteNode(nodeId) {
+    if (!confirm(`Are you sure you want to delete node ${nodeId}? This will also delete all connected edges.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/nodes/${nodeId}`, {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json'}
+        });
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            alert('Error: ' + result.error);
+        } else {
+            alert('Node deleted successfully!');
+            loadNodes();
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+</script>
+{% endblock %}

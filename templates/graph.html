@@ -1,0 +1,644 @@
+{% extends "base.html" %}
+
+{% block title %}Graph Visualization - AGE Graph Manager{% endblock %}
+
+{% block extra_css %}
+<style>
+    #graphContainer {
+        width: 100%;
+        height: 600px;
+        border: 2px solid #ddd;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    .legend {
+        margin-top: 20px;
+        padding: 15px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .legend-item {
+        display: inline-block;
+        margin-right: 20px;
+        margin-bottom: 10px;
+    }
+    
+    .legend-color {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        margin-right: 8px;
+        vertical-align: middle;
+        border: 2px solid #333;
+    }
+    
+    .legend-label {
+        vertical-align: middle;
+        font-weight: 500;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h2>Graph Visualization</h2>
+        <p class="text-muted">Interactive visualization of your graph database</p>
+        
+        <!-- Graph selector -->
+        <div class="mb-3">
+            <label for="graphSelector" class="form-label">Select Graph:</label>
+            <div class="input-group">
+                <select class="form-select" id="graphSelector">
+                    <option value="">-- Select a graph --</option>
+                </select>
+                <button class="btn btn-primary" id="loadGraphBtn">Load Graph</button>
+            </div>
+        </div>
+        
+        <div id="graphContainer"></div>
+        
+        <!-- Legend -->
+        <div class="legend">
+            <h5>Legend</h5>
+            <div class="row">
+                <div class="col-md-6">
+                    <strong>Node Types:</strong><br>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background-color: #4A90E2;"></span>
+                        <span class="legend-label">Person</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background-color: #50C878;"></span>
+                        <span class="legend-label">Product</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background-color: #F39C12;"></span>
+                        <span class="legend-label">Location</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background-color: #9B59B6;"></span>
+                        <span class="legend-label">Company</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background-color: #E74C3C;"></span>
+                        <span class="legend-label">Event</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background-color: #95A5A6;"></span>
+                        <span class="legend-label">Other</span>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <strong>Edge Types:</strong><br>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background-color: #3498db; border-radius: 0;"></span>
+                        <span class="legend-label">KNOWS</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background-color: #2ecc71; border-radius: 0;"></span>
+                        <span class="legend-label">PURCHASED</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background-color: #9b59b6; border-radius: 0;"></span>
+                        <span class="legend-label">WORKS_AT</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background-color: #f39c12; border-radius: 0;"></span>
+                        <span class="legend-label">LOCATED_IN</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background-color: #1abc9c; border-radius: 0;"></span>
+                        <span class="legend-label">FRIEND_OF</span>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-3">
+                <small class="text-muted">
+                    <strong>Tip:</strong> Click and drag nodes to rearrange, scroll to zoom, and hover over nodes/edges for details.
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', async function() {
+    // Load available graphs
+    await loadGraphsList();
+    
+    // Check if a graph is already selected in session
+    const currentGraph = '{{ current_graph }}';
+    if (currentGraph && currentGraph !== 'None') {
+        document.getElementById('graphSelector').value = currentGraph;
+        loadGraphVisualization(currentGraph);
+    }
+    
+    // Load graph button click
+    document.getElementById('loadGraphBtn').addEventListener('click', function() {
+        const selectedGraph = document.getElementById('graphSelector').value;
+        if (selectedGraph) {
+            // Select the graph in session
+            selectGraphAndLoad(selectedGraph);
+        } else {
+            alert('Please select a graph first');
+        }
+    });
+});
+
+async function loadGraphsList() {
+    try {
+        const response = await fetch('/api/graphs');
+        const result = await response.json();
+        const selector = document.getElementById('graphSelector');
+        
+        if (result.error) {
+            selector.innerHTML = '<option value="">Error loading graphs</option>';
+        } else if (result.graphs && result.graphs.length > 0) {
+            const options = '<option value="">-- Select a graph --</option>' +
+                result.graphs.map(graph => 
+                    `<option value="${graph}">${graph}</option>`
+                ).join('');
+            selector.innerHTML = options;
+        } else {
+            selector.innerHTML = '<option value="">No graphs available</option>';
+        }
+    } catch (error) {
+        console.error('Error loading graphs:', error);
+    }
+}
+
+async function selectGraphAndLoad(graphName) {
+    try {
+        // Select the graph in session
+        const response = await fetch('/api/graphs/select', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ graph_name: graphName })
+        });
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            alert('Error selecting graph: ' + result.error);
+        } else {
+            // Load the visualization
+            loadGraphVisualization(graphName);
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+// Generate a unique color for each node type
+function generateColorForType(type, index, total) {
+    // Predefined color palette for common types
+    const predefinedColors = {
+        'Person': '#4A90E2',
+        'Product': '#50C878',
+        'Location': '#F39C12',
+        'Company': '#9B59B6',
+        'Event': '#E74C3C',
+        'Organization': '#3498DB',
+        'Place': '#E67E22',
+        'Thing': '#16A085',
+        'Concept': '#8E44AD',
+        'User': '#2980B9',
+        'Customer': '#27AE60',
+        'Order': '#F39C12',
+        'Item': '#D35400',
+        'Category': '#C0392B'
+    };
+    
+    if (predefinedColors[type]) {
+        return predefinedColors[type];
+    }
+    
+    // Generate color based on hue rotation for dynamic types
+    const hue = (index * 360 / Math.max(total, 1)) % 360;
+    const saturation = 65 + (index % 3) * 10; // Vary saturation
+    const lightness = 50 + (index % 2) * 10;  // Vary lightness
+    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+}
+
+// Generate a unique color for each edge type
+function generateEdgeColorForType(type, index, total) {
+    // Predefined color palette for common edge types
+    const predefinedColors = {
+        'KNOWS': '#3498db',
+        'PURCHASED': '#2ecc71',
+        'WORKS_AT': '#9b59b6',
+        'LOCATED_IN': '#f39c12',
+        'FRIEND_OF': '#1abc9c',
+        'BELONGS_TO': '#e74c3c',
+        'HAS': '#34495e',
+        'LIKES': '#e91e63',
+        'FOLLOWS': '#00bcd4',
+        'CREATED': '#ff9800',
+        'OWNS': '#795548',
+        'MANAGES': '#607d8b',
+        'REPORTS_TO': '#9c27b0',
+        'CONTAINS': '#00bcd4',
+        'CONNECTED_TO': '#8bc34a'
+    };
+    
+    if (predefinedColors[type]) {
+        return predefinedColors[type];
+    }
+    
+    // Generate color based on hue rotation for dynamic edge types
+    const hue = (index * 360 / Math.max(total, 1) + 30) % 360; // +30 offset from nodes
+    const saturation = 60 + (index % 3) * 10;
+    const lightness = 45 + (index % 2) * 10;
+    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+}
+
+async function loadGraphVisualization(graphName) {
+    const container = document.getElementById('graphContainer');
+    container.innerHTML = '<div class="alert alert-info m-3">Loading graph data...</div>';
+    
+    try {
+        const response = await fetch('/api/graph-data');
+        
+        // Check if response is JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            // Received HTML instead of JSON - likely redirected
+            container.innerHTML = 
+                `<div class="alert alert-warning m-3">Please select a graph above to visualize.</div>`;
+            return;
+        }
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            container.innerHTML = 
+                `<div class="alert alert-danger m-3">${data.error}</div>`;
+            return;
+        }
+        
+        // First pass: collect all unique node types and edge types
+        const nodeTypes = new Set();
+        const edgeTypes = new Set();
+        
+        (data.nodes || []).forEach(node => {
+            try {
+                const nodeStr = node[0].split('::')[0].trim();
+                const nodeData = JSON.parse(nodeStr);
+                nodeTypes.add(nodeData.label || 'Node');
+            } catch (e) {
+                console.error('Error parsing node:', e);
+            }
+        });
+        
+        (data.edges || []).forEach(edge => {
+            try {
+                const edgeStr = edge[1].split('::')[0].trim();
+                const edgeData = JSON.parse(edgeStr);
+                edgeTypes.add(edgeData.label || 'CONNECTED');
+            } catch (e) {
+                console.error('Error parsing edge:', e);
+            }
+        });
+        
+        // Create color mapping for all node types
+        const nodeTypeArray = Array.from(nodeTypes);
+        const nodeColorMap = {};
+        nodeTypeArray.forEach((type, index) => {
+            nodeColorMap[type] = generateColorForType(type, index, nodeTypeArray.length);
+        });
+        
+        // Create color mapping for all edge types
+        const edgeTypeArray = Array.from(edgeTypes);
+        const edgeColorMap = {};
+        edgeTypeArray.forEach((type, index) => {
+            edgeColorMap[type] = generateEdgeColorForType(type, index, edgeTypeArray.length);
+        });
+        
+        // Transform data for vis.js
+        const nodes = new vis.DataSet(
+            (data.nodes || []).map((node, index) => {
+                // Extract node data - AGE returns vertex structure
+                let nodeData;
+                try {
+                    // AGE returns data as strings that need parsing
+                    const nodeStr = node[0];
+                    // Remove AGE type annotation if present (e.g., "::vertex" suffix)
+                    const cleanStr = nodeStr.split('::')[0].trim();
+                    nodeData = JSON.parse(cleanStr);
+                } catch (e) {
+                    console.error('Error parsing node:', node[0], e);
+                    nodeData = node[0];
+                }
+                
+                const label = nodeData.label || 'Node';
+                const properties = nodeData.properties || {};
+                
+                // Get color from mapping
+                const color = nodeColorMap[label];
+                
+                // Create display label with properties
+                const displayName = properties.name || properties.title || label;
+                
+                // Build property display string (show up to 3 key properties)
+                const propKeys = Object.keys(properties).filter(k => k !== 'name' && k !== 'title').slice(0, 3);
+                const propDisplay = propKeys.map(k => `${k}: ${properties[k]}`).join('\n');
+                const displayLabel = propDisplay ? `${displayName}\n${propDisplay}` : displayName;
+                
+                // Tooltip with all properties
+                const tooltipText = `${label} (ID: ${nodeData.id})\n${JSON.stringify(properties, null, 2)}`;
+                
+                return {
+                    id: nodeData.id || index,
+                    label: displayLabel,
+                    title: tooltipText,
+                    color: {
+                        background: color,
+                        border: darkenColor(color, 20),
+                        highlight: {
+                            background: lightenColor(color, 20),
+                            border: color
+                        }
+                    },
+                    font: {
+                        color: '#ffffff',
+                        size: 14,
+                        face: 'Arial',
+                        bold: { mod: 'bold' },
+                        multi: 'html'
+                    },
+                    shape: 'box',
+                    size: 25,
+                    group: label,
+                    margin: 10,
+                    widthConstraint: { minimum: 80, maximum: 200 }
+                };
+            })
+        );
+        
+        const edges = new vis.DataSet(
+            (data.edges || []).map((edge, index) => {
+                // Extract edge data
+                let fromNode, edgeData, toNode;
+                try {
+                    // AGE returns data as strings that need parsing
+                    const fromStr = edge[0].split('::')[0].trim();
+                    const edgeStr = edge[1].split('::')[0].trim();
+                    const toStr = edge[2].split('::')[0].trim();
+                    
+                    fromNode = JSON.parse(fromStr);
+                    edgeData = JSON.parse(edgeStr);
+                    toNode = JSON.parse(toStr);
+                } catch (e) {
+                    console.error('Error parsing edge:', edge, e);
+                    return null;
+                }
+                
+                const edgeLabel = edgeData.label || 'CONNECTED';
+                const edgeProperties = edgeData.properties || {};
+                
+                // Get color from edge color mapping
+                const edgeColor = edgeColorMap[edgeLabel];
+                
+                // Build edge label with properties
+                const propKeys = Object.keys(edgeProperties).slice(0, 2);
+                const propDisplay = propKeys.map(k => `${k}: ${edgeProperties[k]}`).join(', ');
+                const displayEdgeLabel = propDisplay ? `${edgeLabel}\n[${propDisplay}]` : edgeLabel;
+                
+                return {
+                    id: edgeData.id || index,
+                    from: fromNode.id,
+                    to: toNode.id,
+                    label: displayEdgeLabel,
+                    title: `${edgeLabel} (ID: ${edgeData.id})\n${JSON.stringify(edgeProperties, null, 2)}`,
+                    color: {
+                        color: edgeColor,
+                        highlight: lightenColor(edgeColor, 20),
+                        hover: lightenColor(edgeColor, 30)
+                    },
+                    width: 3,
+                    arrows: {
+                        to: { 
+                            enabled: true, 
+                            scaleFactor: 1,
+                            type: 'arrow'
+                        }
+                    },
+                    font: {
+                        color: darkenColor(edgeColor, 20),
+                        size: 11,
+                        align: 'middle',
+                        background: 'rgba(255, 255, 255, 0.9)',
+                        strokeWidth: 0,
+                        bold: true
+                    },
+                    smooth: {
+                        enabled: true,
+                        type: 'curvedCW',
+                        roundness: 0.2
+                    }
+                };
+            })
+        );
+        
+        // Helper functions for color manipulation
+        function lightenColor(color, percent) {
+            const num = parseInt(color.replace('#', ''), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = (num >> 16) + amt;
+            const G = (num >> 8 & 0x00FF) + amt;
+            const B = (num & 0x0000FF) + amt;
+            return '#' + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 +
+                (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
+                (B < 255 ? B < 1 ? 0 : B : 255))
+                .toString(16).slice(1);
+        }
+        
+        function darkenColor(color, percent) {
+            const num = parseInt(color.replace('#', ''), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = (num >> 16) - amt;
+            const G = (num >> 8 & 0x00FF) - amt;
+            const B = (num & 0x0000FF) - amt;
+            return '#' + (0x1000000 + (R > 0 ? R : 0) * 0x10000 +
+                (G > 0 ? G : 0) * 0x100 +
+                (B > 0 ? B : 0))
+                .toString(16).slice(1);
+        }
+        
+        const graphData = { nodes, edges };
+        const options = {
+            nodes: {
+                shape: 'dot',
+                size: 25,
+                font: {
+                    size: 16,
+                    color: '#ffffff',
+                    face: 'Arial',
+                    bold: true
+                },
+                borderWidth: 3,
+                shadow: {
+                    enabled: true,
+                    color: 'rgba(0,0,0,0.3)',
+                    size: 10,
+                    x: 3,
+                    y: 3
+                }
+            },
+            edges: {
+                width: 3,
+                shadow: {
+                    enabled: true,
+                    color: 'rgba(0,0,0,0.2)',
+                    size: 5,
+                    x: 2,
+                    y: 2
+                },
+                smooth: {
+                    enabled: true,
+                    type: 'curvedCW',
+                    roundness: 0.2
+                }
+            },
+            physics: {
+                enabled: true,
+                stabilization: {
+                    enabled: true,
+                    iterations: 200
+                },
+                barnesHut: {
+                    gravitationalConstant: -8000,
+                    centralGravity: 0.3,
+                    springLength: 200,
+                    springConstant: 0.04,
+                    damping: 0.09,
+                    avoidOverlap: 0.5
+                }
+            },
+            interaction: {
+                hover: true,
+                tooltipDelay: 100,
+                navigationButtons: true,
+                keyboard: true,
+                zoomView: true,
+                dragView: true
+            },
+            layout: {
+                improvedLayout: true,
+                randomSeed: 42
+            }
+        };
+        
+        const network = new vis.Network(container, graphData, options);
+        
+        // Generate dynamic legend based on actual data
+        generateLegend(data);
+        
+        if (nodes.length === 0) {
+            container.innerHTML = 
+                `<div class="alert alert-info m-3">No nodes in the graph "${graphName}" yet. Create some nodes to see the visualization!</div>`;
+        }
+    } catch (error) {
+        container.innerHTML = 
+            `<div class="alert alert-danger m-3">Error loading graph: ${error.message}</div>`;
+    }
+}
+
+function generateLegend(data) {
+    // Extract unique node types and edge types from data
+    const nodeTypes = new Set();
+    const edgeTypes = new Set();
+    
+    // Get node types
+    (data.nodes || []).forEach(node => {
+        try {
+            const nodeStr = node[0].split('::')[0].trim();
+            const nodeData = JSON.parse(nodeStr);
+            const label = nodeData.label || 'Unknown';
+            nodeTypes.add(label);
+        } catch (e) {
+            console.error('Error parsing node in legend:', e);
+        }
+    });
+    
+    // Get edge types
+    (data.edges || []).forEach(edge => {
+        try {
+            const edgeStr = edge[1].split('::')[0].trim();
+            const edgeData = JSON.parse(edgeStr);
+            const label = edgeData.label || 'CONNECTED';
+            edgeTypes.add(label);
+        } catch (e) {
+            console.error('Error parsing edge in legend:', e);
+        }
+    });
+    
+    // Create color mappings
+    const nodeTypeArray = Array.from(nodeTypes);
+    const nodeColorMap = {};
+    nodeTypeArray.forEach((type, index) => {
+        nodeColorMap[type] = generateColorForType(type, index, nodeTypeArray.length);
+    });
+    
+    const edgeTypeArray = Array.from(edgeTypes);
+    const edgeColorMap = {};
+    edgeTypeArray.forEach((type, index) => {
+        edgeColorMap[type] = generateEdgeColorForType(type, index, edgeTypeArray.length);
+    });
+    
+    // Build legend HTML
+    let legendHTML = '<h5>Legend</h5><div class="row">';
+    
+    // Node types section
+    legendHTML += '<div class="col-md-6"><strong>Node Types:</strong><br>';
+    if (nodeTypes.size > 0) {
+        nodeTypeArray.forEach(type => {
+            const color = nodeColorMap[type];
+            legendHTML += `
+                <div class="legend-item">
+                    <span class="legend-color" style="background-color: ${color};"></span>
+                    <span class="legend-label">${type}</span>
+                </div>`;
+        });
+    } else {
+        legendHTML += '<p class="text-muted small">No nodes yet</p>';
+    }
+    legendHTML += '</div>';
+    
+    // Edge types section
+    legendHTML += '<div class="col-md-6"><strong>Edge Types:</strong><br>';
+    if (edgeTypes.size > 0) {
+        edgeTypeArray.forEach(type => {
+            const color = edgeColorMap[type];
+            legendHTML += `
+                <div class="legend-item">
+                    <span class="legend-color" style="background-color: ${color}; border-radius: 0;"></span>
+                    <span class="legend-label">${type}</span>
+                </div>`;
+        });
+    } else {
+        legendHTML += '<p class="text-muted small">No edges yet</p>';
+    }
+    legendHTML += '</div></div>';
+    
+    // Add tips
+    legendHTML += `
+        <div class="mt-3">
+            <small class="text-muted">
+                <strong>Tip:</strong> Click and drag nodes to rearrange, scroll to zoom, and hover over nodes/edges for details.
+            </small>
+        </div>`;
+    
+    document.querySelector('.legend').innerHTML = legendHTML;
+}
+</script>
+{% endblock %}
