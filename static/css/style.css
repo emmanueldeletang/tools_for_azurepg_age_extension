@@ -1,0 +1,31 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.navbar-brand {
+    font-weight: bold;
+}
+
+.card {
+    transition: transform 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.property-row {
+    align-items: center;
+}
+
+#graphContainer {
+    background-color: #f8f9fa;
+}
+
+pre {
+    background-color: #f4f4f4;
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 12px;
+}
