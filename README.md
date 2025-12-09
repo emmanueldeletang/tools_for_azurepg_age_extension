@@ -45,8 +45,8 @@ A comprehensive Flask web application for managing Apache AGE graph databases in
    ```
 
 5. **Configure environment variables**
-   
-   - Update with your credentials .env`:
+   - Copy `.env.example` to `.env`
+   - Update with your credentials:
    ```env
    DATABASE_URL=postgresql://username:password@host:port/database
    AGE_ENABLED=true
@@ -144,6 +144,83 @@ python recreate_road_graph.py
 - "What highways have distance greater than 300 km?"
 - "Find all roads with time less than 2 hours"
 
+### Demo Data: Social Network Graph
+
+Generate a comprehensive social network with people, sports, and companies:
+
+```bash
+python create_social_network.py
+```
+
+This creates a `social_network` graph with:
+- **100 Person nodes** with properties:
+  - `name` (full names)
+  - `age` (22-65 years)
+  - `city` (46 major US cities)
+- **10 Sport nodes** with properties:
+  - `name` (Soccer, Basketball, Tennis, Swimming, Running, Cycling, Golf, Volleyball, Baseball, Boxing)
+  - `category` (Indoor/Outdoor)
+- **10 Company nodes** with properties:
+  - `name` (Tech companies)
+  - `employees` (50-500)
+  - `industry` (Technology, Finance, Healthcare, Retail, Manufacturing)
+
+**Relationships:**
+- **PRACTICE** (Person → Sport): 1-3 sports per person with `years` and `skill_level`
+- **LIKE** (Person → Sport): 1-4 sports per person with `interest_level` (1-10)
+- **WORKS_AT** (Person → Company): Each person works at one company with `position`, `years`, and `salary`
+- **FRIENDS** (Person → Person): 3-8 friends per person with `since` (year) and `closeness` (1-10)
+- **COWORKER** (Person → Person): 2-5 coworkers per person (same company) with `department` and `collaboration_score` (1-10)
+
+**To recreate from scratch:**
+```bash
+python recreate_social_network.py
+```
+
+**Example natural language queries for the social network:**
+
+*Basic Node Queries:*
+- "Show all people older than 40"
+- "Find all people living in New York"
+- "Show all sports with category Outdoor"
+- "List all companies in the Technology industry"
+
+*Sports & Hobbies:*
+- "Find all people who practice Soccer"
+- "Show people who like Basketball with interest level greater than 7"
+- "Find Expert level practitioners of any sport"
+- "Who practices both Swimming and Running?"
+
+*Work & Companies:*
+- "Show all employees at Tech Innovations Inc"
+- "Find all Managers across all companies"
+- "Show people who have worked for more than 10 years"
+- "Find all employees with salary greater than 100000"
+
+*Social Connections:*
+- "Show all friends of [person name]"
+- "Find people with more than 5 friends"
+- "Show friendships that started before 2015"
+- "Find coworkers with high collaboration scores"
+
+*Complex Relationship Queries:*
+- "Find friends who work at the same company"
+- "Show people who are coworkers and also friends"
+- "Find people who practice the same sports as their friends"
+- "Show coworkers who have no common sports interests"
+
+*Cross-Domain Queries:*
+- "Find people in Chicago who work in Technology and practice Cycling"
+- "Show young professionals (age < 30) who like team sports"
+- "Find people who work in Finance and practice Golf"
+- "Show people with high salaries who practice expensive sports like Golf"
+
+*Network Analysis:*
+- "Count how many people practice each sport"
+- "Which company has the most employees?"
+- "Find people with the most friends"
+- "Show the average age by city"
+
 ### Performance Optimization: Index Creation
 
 Analyze all graphs and create optimized indexes:
@@ -169,6 +246,8 @@ grapgenric/
 ├── .env.example               # Environment variables template
 ├── create_road_graph.py       # Demo road network generator (25 cities)
 ├── recreate_road_graph.py     # Drop and recreate road graph script
+├── create_social_network.py   # Demo social network generator (100 people, 10 sports, 10 companies)
+├── recreate_social_network.py # Drop and recreate social network script
 ├── create_graph_indexes.py    # Automated index creation for all graphs
 ├── database/
 │   └── init_graph.py          # Database initialization script
@@ -178,8 +257,8 @@ grapgenric/
 ├── templates/                  # HTML templates (Jinja2)
 │   ├── base.html              # Base template with Bootstrap 5
 │   ├── index.html             # Home page with graph management
-│   ├── nodes.html             # Node CRUD operations
-│   ├── edges.html             # Edge CRUD operations
+│   ├── nodes.html             # Node CRUD with pagination (25/page) and label filtering
+│   ├── edges.html             # Edge CRUD with pagination (25/page) and type filtering
 │   ├── graph.html             # Graph visualization page
 │   └── query.html             # NL query interface with dual view (table/graph)
 └── static/                     # Static files
@@ -813,4 +892,3 @@ This workflow ensures transparency and control while leveraging AI assistance.
 ## License
 
 MIT License
-
