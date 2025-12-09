@@ -77,12 +77,26 @@
     
     <div class="col-md-6">
         <h2>Existing Edges</h2>
-        <div class="mb-3">
-            <input type="text" class="form-control" id="filterEdgeLabel" placeholder="Filter by edge label">
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <label for="edgeLabelFilter" class="form-label">Filter by Label:</label>
+                <select class="form-select" id="edgeLabelFilter">
+                    <option value="">All Labels</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">&nbsp;</label>
+                <button class="btn btn-secondary w-100" id="applyEdgeFilter">Apply Filter</button>
+            </div>
         </div>
         <div id="edgesList" class="list-group">
             <p class="text-muted">Loading edges...</p>
         </div>
+        <nav aria-label="Edges pagination" class="mt-3">
+            <ul class="pagination justify-content-center" id="edgesPagination">
+            </ul>
+        </nav>
+        <div class="text-center text-muted small" id="edgesCount"></div>
     </div>
 </div>
 {% endblock %}
@@ -188,8 +202,14 @@ async function loadNodesForDropdowns() {
     }
 }
 
-// Load edges
+// Load edges with pagination
+let allEdges = [];
+let currentEdgePage = 1;
+const edgesPerPage = 25;
+let currentEdgeLabel = '';
+
 async function loadEdges(label = null) {
+    currentEdgeLabel = label || '';
     const url = label ? `/api/edges?label=${label}` : '/api/edges';
     try {
         const response = await fetch(url);
@@ -204,54 +224,163 @@ async function loadEdges(label = null) {
         }
         
         const result = await response.json();
-        const edgesList = document.getElementById('edgesList');
         
         if (result.error) {
-            edgesList.innerHTML = `<p class="text-danger">${result.error}</p>`;
+            document.getElementById('edgesList').innerHTML = `<p class="text-danger">${result.error}</p>`;
+            allEdges = [];
         } else if (result.result && result.result.length > 0) {
-            edgesList.innerHTML = result.result.map(edge => {
+            allEdges = result.result;
+            
+            // Extract unique labels for filter
+            const labels = new Set();
+            allEdges.forEach(edge => {
                 try {
-                    // Parse edge data from AGE format - remove type annotations
-                    const fromStr = edge[0].split('::')[0].trim();
                     const edgeStr = edge[1].split('::')[0].trim();
-                    const toStr = edge[2].split('::')[0].trim();
-                    
-                    const fromNode = JSON.parse(fromStr);
                     const edgeData = JSON.parse(edgeStr);
-                    const toNode = JSON.parse(toStr);
-                    
-                    const fromLabel = fromNode.label || 'Node';
-                    const toLabel = toNode.label || 'Node';
-                    const edgeLabel = edgeData.label || 'CONNECTED';
-                    const edgeId = edgeData.id;
-                    const edgeProperties = edgeData.properties || {};
-                    
-                    return `<div class="list-group-item">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <strong>${fromLabel} (${fromNode.id})</strong> 
-                                -[${edgeLabel}]-> 
-                                <strong>${toLabel} (${toNode.id})</strong>
-                                <div class="small text-muted">Edge ID: ${edgeId} | Properties: ${JSON.stringify(edgeProperties)}</div>
-                            </div>
-                            <div class="btn-group btn-group-sm" role="group">
-                                <button class="btn btn-outline-primary" onclick="editEdge(${edgeId}, ${fromNode.id}, ${toNode.id}, '${edgeLabel}', ${JSON.stringify(edgeProperties).replace(/"/g, '&quot;')})">Edit</button>
-                                <button class="btn btn-outline-danger" onclick="deleteEdge(${edgeId})">Delete</button>
-                            </div>
-                        </div>
-                    </div>`;
+                    if (edgeData.label) labels.add(edgeData.label);
                 } catch (e) {
-                    console.error('Error parsing edge:', e);
-                    return `<div class="list-group-item list-group-item-danger">Error parsing edge</div>`;
+                    console.error('Error parsing edge for label:', e);
                 }
-            }).join('');
+            });
+            
+            // Update label filter dropdown
+            const labelFilter = document.getElementById('edgeLabelFilter');
+            const currentValue = labelFilter.value;
+            labelFilter.innerHTML = '<option value="">All Labels</option>' +
+                Array.from(labels).sort().map(label => 
+                    `<option value="${label}">${label}</option>`
+                ).join('');
+            labelFilter.value = currentValue;
+            
+            currentEdgePage = 1;
+            displayEdgePage();
         } else {
-            edgesList.innerHTML = '<p class="text-muted">No edges found</p>';
+            allEdges = [];
+            document.getElementById('edgesList').innerHTML = '<p class="text-muted">No edges found</p>';
+            document.getElementById('edgesPagination').innerHTML = '';
+            document.getElementById('edgesCount').innerHTML = '';
         }
     } catch (error) {
         document.getElementById('edgesList').innerHTML = 
             `<p class="text-danger">Error loading edges: ${error.message}</p>`;
+        allEdges = [];
     }
+}
+
+function displayEdgePage() {
+    const edgesList = document.getElementById('edgesList');
+    const start = (currentEdgePage - 1) * edgesPerPage;
+    const end = start + edgesPerPage;
+    const pageEdges = allEdges.slice(start, end);
+    
+    if (pageEdges.length === 0) {
+        edgesList.innerHTML = '<p class="text-muted">No edges found</p>';
+        return;
+    }
+    
+    edgesList.innerHTML = pageEdges.map(edge => {
+        try {
+            // Parse edge data from AGE format - remove type annotations
+            const fromStr = edge[0].split('::')[0].trim();
+            const edgeStr = edge[1].split('::')[0].trim();
+            const toStr = edge[2].split('::')[0].trim();
+            
+            const fromNode = JSON.parse(fromStr);
+            const edgeData = JSON.parse(edgeStr);
+            const toNode = JSON.parse(toStr);
+            
+            const fromLabel = fromNode.label || 'Node';
+            const toLabel = toNode.label || 'Node';
+            const edgeLabel = edgeData.label || 'CONNECTED';
+            const edgeId = edgeData.id;
+            const edgeProperties = edgeData.properties || {};
+            
+            return `<div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>${fromLabel} (${fromNode.id})</strong> 
+                        -[${edgeLabel}]-> 
+                        <strong>${toLabel} (${toNode.id})</strong>
+                        <div class="small text-muted">Edge ID: ${edgeId} | Properties: ${JSON.stringify(edgeProperties)}</div>
+                    </div>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button class="btn btn-outline-primary" onclick="editEdge(${edgeId}, ${fromNode.id}, ${toNode.id}, '${edgeLabel}', ${JSON.stringify(edgeProperties).replace(/"/g, '&quot;')})">Edit</button>
+                        <button class="btn btn-outline-danger" onclick="deleteEdge(${edgeId})">Delete</button>
+                    </div>
+                </div>
+            </div>`;
+        } catch (e) {
+            console.error('Error parsing edge:', e);
+            return `<div class="list-group-item list-group-item-danger">Error parsing edge</div>`;
+        }
+    }).join('');
+    
+    // Update pagination
+    displayEdgePagination();
+    
+    // Update count
+    document.getElementById('edgesCount').innerHTML = 
+        `Showing ${start + 1}-${Math.min(end, allEdges.length)} of ${allEdges.length} edges`;
+}
+
+function displayEdgePagination() {
+    const totalPages = Math.ceil(allEdges.length / edgesPerPage);
+    const pagination = document.getElementById('edgesPagination');
+    
+    if (totalPages <= 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+    
+    let html = '';
+    
+    // Previous button
+    html += `<li class="page-item ${currentEdgePage === 1 ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="changeEdgePage(${currentEdgePage - 1}); return false;">Previous</a>
+    </li>`;
+    
+    // Page numbers
+    const maxPages = 5;
+    let startPage = Math.max(1, currentEdgePage - Math.floor(maxPages / 2));
+    let endPage = Math.min(totalPages, startPage + maxPages - 1);
+    
+    if (endPage - startPage < maxPages - 1) {
+        startPage = Math.max(1, endPage - maxPages + 1);
+    }
+    
+    if (startPage > 1) {
+        html += `<li class="page-item"><a class="page-link" href="#" onclick="changeEdgePage(1); return false;">1</a></li>`;
+        if (startPage > 2) {
+            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        html += `<li class="page-item ${i === currentEdgePage ? 'active' : ''}">
+            <a class="page-link" href="#" onclick="changeEdgePage(${i}); return false;">${i}</a>
+        </li>`;
+    }
+    
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+        html += `<li class="page-item"><a class="page-link" href="#" onclick="changeEdgePage(${totalPages}); return false;">${totalPages}</a></li>`;
+    }
+    
+    // Next button
+    html += `<li class="page-item ${currentEdgePage === totalPages ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="changeEdgePage(${currentEdgePage + 1}); return false;">Next</a>
+    </li>`;
+    
+    pagination.innerHTML = html;
+}
+
+function changeEdgePage(page) {
+    const totalPages = Math.ceil(allEdges.length / edgesPerPage);
+    if (page < 1 || page > totalPages) return;
+    currentEdgePage = page;
+    displayEdgePage();
 }
 
 document.addEventListener('DOMContentLoaded', async function() {
@@ -277,6 +406,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         } else {
             alert('Please select a graph first');
         }
+    });
+    
+    // Apply filter button
+    document.getElementById('applyEdgeFilter').addEventListener('click', function() {
+        const selectedLabel = document.getElementById('edgeLabelFilter').value;
+        loadEdges(selectedLabel);
     });
     
     // Add property functionality

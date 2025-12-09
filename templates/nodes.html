@@ -61,12 +61,26 @@
     
     <div class="col-md-6">
         <h2>Existing Nodes</h2>
-        <div class="mb-3">
-            <input type="text" class="form-control" id="filterLabel" placeholder="Filter by label">
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <label for="labelFilter" class="form-label">Filter by Label:</label>
+                <select class="form-select" id="labelFilter">
+                    <option value="">All Labels</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">&nbsp;</label>
+                <button class="btn btn-secondary w-100" id="applyFilter">Apply Filter</button>
+            </div>
         </div>
         <div id="nodesList" class="list-group">
             <p class="text-muted">Loading nodes...</p>
         </div>
+        <nav aria-label="Nodes pagination" class="mt-3">
+            <ul class="pagination justify-content-center" id="nodesPagination">
+            </ul>
+        </nav>
+        <div class="text-center text-muted small" id="nodesCount"></div>
     </div>
 </div>
 {% endblock %}
@@ -123,8 +137,14 @@ async function selectGraph(graphName) {
     }
 }
 
-// Load nodes
+// Load nodes with pagination
+let allNodes = [];
+let currentNodePage = 1;
+const nodesPerPage = 25;
+let currentNodeLabel = '';
+
 async function loadNodes(label = null) {
+    currentNodeLabel = label || '';
     const url = label ? `/api/nodes?label=${label}` : '/api/nodes';
     try {
         const response = await fetch(url);
@@ -139,44 +159,153 @@ async function loadNodes(label = null) {
         }
         
         const result = await response.json();
-        const nodesList = document.getElementById('nodesList');
         
         if (result.error) {
-            nodesList.innerHTML = `<p class="text-danger">${result.error}</p>`;
+            document.getElementById('nodesList').innerHTML = `<p class="text-danger">${result.error}</p>`;
+            allNodes = [];
         } else if (result.result && result.result.length > 0) {
-            nodesList.innerHTML = result.result.map(node => {
+            allNodes = result.result;
+            
+            // Extract unique labels for filter
+            const labels = new Set();
+            allNodes.forEach(node => {
                 try {
-                    // Parse the node data from AGE format - remove type annotation
                     const nodeStr = node[0].split('::')[0].trim();
                     const nodeData = JSON.parse(nodeStr);
-                    const nodeLabel = nodeData.label || 'Node';
-                    const nodeId = nodeData.id;
-                    const properties = nodeData.properties || {};
-                    
-                    return `<div class="list-group-item">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <strong>${nodeLabel}</strong> (ID: ${nodeId})
-                                <div class="small text-muted">Properties: ${JSON.stringify(properties)}</div>
-                            </div>
-                            <div class="btn-group btn-group-sm" role="group">
-                                <button class="btn btn-outline-primary" onclick="editNode(${nodeId}, '${nodeLabel}', ${JSON.stringify(properties).replace(/"/g, '&quot;')})">Edit</button>
-                                <button class="btn btn-outline-danger" onclick="deleteNode(${nodeId})">Delete</button>
-                            </div>
-                        </div>
-                    </div>`;
+                    if (nodeData.label) labels.add(nodeData.label);
                 } catch (e) {
-                    console.error('Error parsing node:', e);
-                    return `<div class="list-group-item list-group-item-danger">Error parsing node</div>`;
+                    console.error('Error parsing node for label:', e);
                 }
-            }).join('');
+            });
+            
+            // Update label filter dropdown
+            const labelFilter = document.getElementById('labelFilter');
+            const currentValue = labelFilter.value;
+            labelFilter.innerHTML = '<option value="">All Labels</option>' +
+                Array.from(labels).sort().map(label => 
+                    `<option value="${label}">${label}</option>`
+                ).join('');
+            labelFilter.value = currentValue;
+            
+            currentNodePage = 1;
+            displayNodePage();
         } else {
-            nodesList.innerHTML = '<p class="text-muted">No nodes found</p>';
+            allNodes = [];
+            document.getElementById('nodesList').innerHTML = '<p class="text-muted">No nodes found</p>';
+            document.getElementById('nodesPagination').innerHTML = '';
+            document.getElementById('nodesCount').innerHTML = '';
         }
     } catch (error) {
         document.getElementById('nodesList').innerHTML = 
             `<p class="text-danger">Error loading nodes: ${error.message}</p>`;
+        allNodes = [];
     }
+}
+
+function displayNodePage() {
+    const nodesList = document.getElementById('nodesList');
+    const start = (currentNodePage - 1) * nodesPerPage;
+    const end = start + nodesPerPage;
+    const pageNodes = allNodes.slice(start, end);
+    
+    if (pageNodes.length === 0) {
+        nodesList.innerHTML = '<p class="text-muted">No nodes found</p>';
+        return;
+    }
+    
+    nodesList.innerHTML = pageNodes.map(node => {
+        try {
+            // Parse the node data from AGE format - remove type annotation
+            const nodeStr = node[0].split('::')[0].trim();
+            const nodeData = JSON.parse(nodeStr);
+            const nodeLabel = nodeData.label || 'Node';
+            const nodeId = nodeData.id;
+            const properties = nodeData.properties || {};
+            
+            return `<div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>${nodeLabel}</strong> (ID: ${nodeId})
+                        <div class="small text-muted">Properties: ${JSON.stringify(properties)}</div>
+                    </div>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button class="btn btn-outline-primary" onclick="editNode(${nodeId}, '${nodeLabel}', ${JSON.stringify(properties).replace(/"/g, '&quot;')})">Edit</button>
+                        <button class="btn btn-outline-danger" onclick="deleteNode(${nodeId})">Delete</button>
+                    </div>
+                </div>
+            </div>`;
+        } catch (e) {
+            console.error('Error parsing node:', e);
+            return `<div class="list-group-item list-group-item-danger">Error parsing node</div>`;
+        }
+    }).join('');
+    
+    // Update pagination
+    displayNodePagination();
+    
+    // Update count
+    document.getElementById('nodesCount').innerHTML = 
+        `Showing ${start + 1}-${Math.min(end, allNodes.length)} of ${allNodes.length} nodes`;
+}
+
+function displayNodePagination() {
+    const totalPages = Math.ceil(allNodes.length / nodesPerPage);
+    const pagination = document.getElementById('nodesPagination');
+    
+    if (totalPages <= 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+    
+    let html = '';
+    
+    // Previous button
+    html += `<li class="page-item ${currentNodePage === 1 ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="changeNodePage(${currentNodePage - 1}); return false;">Previous</a>
+    </li>`;
+    
+    // Page numbers
+    const maxPages = 5;
+    let startPage = Math.max(1, currentNodePage - Math.floor(maxPages / 2));
+    let endPage = Math.min(totalPages, startPage + maxPages - 1);
+    
+    if (endPage - startPage < maxPages - 1) {
+        startPage = Math.max(1, endPage - maxPages + 1);
+    }
+    
+    if (startPage > 1) {
+        html += `<li class="page-item"><a class="page-link" href="#" onclick="changeNodePage(1); return false;">1</a></li>`;
+        if (startPage > 2) {
+            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        html += `<li class="page-item ${i === currentNodePage ? 'active' : ''}">
+            <a class="page-link" href="#" onclick="changeNodePage(${i}); return false;">${i}</a>
+        </li>`;
+    }
+    
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+        html += `<li class="page-item"><a class="page-link" href="#" onclick="changeNodePage(${totalPages}); return false;">${totalPages}</a></li>`;
+    }
+    
+    // Next button
+    html += `<li class="page-item ${currentNodePage === totalPages ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="changeNodePage(${currentNodePage + 1}); return false;">Next</a>
+    </li>`;
+    
+    pagination.innerHTML = html;
+}
+
+function changeNodePage(page) {
+    const totalPages = Math.ceil(allNodes.length / nodesPerPage);
+    if (page < 1 || page > totalPages) return;
+    currentNodePage = page;
+    displayNodePage();
 }
 
 document.addEventListener('DOMContentLoaded', async function() {
@@ -201,6 +330,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         } else {
             alert('Please select a graph first');
         }
+    });
+    
+    // Apply filter button
+    document.getElementById('applyFilter').addEventListener('click', function() {
+        const selectedLabel = document.getElementById('labelFilter').value;
+        loadNodes(selectedLabel);
     });
     
     // Add property functionality
