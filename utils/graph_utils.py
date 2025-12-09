@@ -25,8 +25,13 @@ class GraphUtils:
                 # Set the search path to include ag_catalog
                 conn.execute(text("SET search_path = ag_catalog, '$user', public;"))
                 
-                # Execute the Cypher query
-                result = conn.execute(text(cypher_query), params or {})
+                # Execute the Cypher query without parameter substitution
+                # The text() function with no params will treat the query as-is
+                if params:
+                    result = conn.execute(text(cypher_query), params)
+                else:
+                    # Use raw connection to avoid bind parameter interpretation
+                    result = conn.exec_driver_sql(cypher_query)
                 conn.commit()
                 
                 # Convert Row objects to lists for JSON serialization

@@ -57,12 +57,21 @@ class OpenAIHelper:
         
         system_prompt = f"""You are an expert in converting natural language queries to Apache AGE SQL queries for PostgreSQL.
 
-CRITICAL RULES FOR APACHE AGE:
-- NEVER use double-dash syntax: (n)--() is FORBIDDEN
-- ALWAYS use brackets for relationships: (n)-[r]-() or (n)-[r:TYPE]->()
-- NEVER use size() function on graph patterns - it's not supported in Apache AGE
-- For counting relationships: MATCH (n)-[r]-() WITH n, count(r) as rel_count WHERE rel_count > X RETURN n
-- Apache AGE does NOT support pipe syntax for multiple types: (a)-[r:TYPE1|TYPE2]-(b) is INVALID
+⚠️ ABSOLUTE PROHIBITION - THESE WILL CAUSE SYNTAX ERRORS:
+1. NEVER EVER use pipe | in relationship patterns: [:TYPE1|TYPE2] ❌ FORBIDDEN ❌
+2. NEVER use double-dash: (n)--() ❌ FORBIDDEN ❌
+3. NEVER use size() on graph patterns ❌ FORBIDDEN ❌
+
+✅ MATCHING MULTIPLE RELATIONSHIP TYPES - USE THIS PATTERN:
+When you need to match FRIENDS OR COWORKER or any multiple types:
+- ❌ WRONG: (a)-[:FRIENDS|COWORKER]-(b) 
+- ❌ WRONG: (a)-[:FRIENDS|:COWORKER]-(b)
+- ✅ CORRECT: MATCH (a)-[r]-(b) WHERE type(r) IN ['FRIENDS', 'COWORKER']
+
+Full example matching friends or coworkers:
+MATCH (person:Person {{name: 'John'}})-[r]-(other:Person)
+WHERE type(r) IN ['FRIENDS', 'COWORKER']
+RETURN other
 
 IMPORTANT - Query Format:
 - You MUST generate the COMPLETE AGE SQL query including the SELECT wrapper
@@ -77,10 +86,12 @@ Query Guidelines:
 - For undirected relationships: (a)-[r]-(b)
 - For directed relationships: (a)-[r]->(b) or (a)<-[r]-(b)
 - For any relationship type, use untyped patterns: (a)-[r]->(b) or (a)-[r*1..5]-(b)
-- To match multiple relationship types, use WHERE clause: (a)-[r]-(b) WHERE r.label = 'TYPE1' OR r.label = 'TYPE2'
+- To filter multiple relationship types: MATCH (a)-[r]-(b) WHERE type(r) IN ['TYPE1', 'TYPE2']
+- NEVER EVER use pipe syntax [:TYPE1|TYPE2] - Apache AGE does not support this!
 - Always return clear, readable queries
 - If the query is ambiguous, make reasonable assumptions
 - Use LIMIT when appropriate to avoid returning too much data
+- For counting relationships: MATCH (n)-[r]-() WITH n, count(r) as rel_count WHERE rel_count > X RETURN n
 
 Shortest Path Queries (for graphs with distance/time properties):
 - Use variable-length path patterns: (a)-[*1..6]-(b) for up to 6 hops (matches ANY relationship type)
@@ -90,6 +101,7 @@ Shortest Path Queries (for graphs with distance/time properties):
 
 Examples of CORRECT queries:
 - Find nodes: SELECT * FROM cypher('graph_name', $$ MATCH (n) RETURN n LIMIT 10 $$) AS (node agtype);
+- Multiple relationship types: SELECT * FROM cypher('graph_name', $$ MATCH (a:Person)-[r]-(b:Person) WHERE type(r) IN ['FRIENDS', 'COWORKER'] RETURN b LIMIT 10 $$) AS (person agtype);
 - Nodes with connections: SELECT * FROM cypher('graph_name', $$ MATCH (n)-[r]-() WITH n, count(r) as connections WHERE connections > 2 RETURN n, connections $$) AS (node agtype, connections agtype);
 - Shortest path: SELECT * FROM cypher('graph_name', $$ MATCH paths = (a:City {{name: 'A'}})-[r*1..6]-(b:City {{name: 'B'}}) WITH paths, relationships(paths) AS rels UNWIND rels AS rel WITH nodes(paths) AS nodes, sum(rel.time) AS totalTime RETURN nodes, totalTime ORDER BY totalTime LIMIT 5 $$) AS (nodes agtype, totalTime agtype);
 {schema_context}
