@@ -1,29 +1,79 @@
-# Flask Apache AGE Graph Database Manager
+# AGE Graph Manager — Flask + Apache AGE + Azure OpenAI
 
-A comprehensive Flask web application for managing Apache AGE graph databases in PostgreSQL. This application provides a user-friendly interface to create, manage, and visualize graph data with AI-powered natural language query capabilities.
+> A full-stack web application for creating, exploring, and querying graph databases through an intuitive UI and AI-powered natural language interface.
 
-## Features
+---
 
-- 🌐 **Web UI**: Modern, responsive interface built with Bootstrap 5
-- 📊 **Node Management**: Create, update, and delete nodes with labels and custom properties
-- 🔗 **Edge Management**: Create, update, and delete relationships (edges) between nodes with properties
-- 📈 **Interactive Graph Visualization**: Real-time graph visualization using vis.js with dynamic colors
-- 🤖 **AI-Powered Natural Language Queries**: Ask questions in plain English (powered by Azure OpenAI)
-  - Automatic query generation from natural language
-  - Edit generated queries before execution
-  - View results in table or interactive graph format
-- 🎯 **Smart Property Handling**: Automatic type detection for numeric, boolean, and string values
-- 🗂️ **Multi-Graph Support**: Create and switch between multiple graphs
-- 🔧 **RESTful API**: Complete JSON API for programmatic access
-- 🎨 **Dynamic Colors**: Auto-generated unique colors for different node and edge types
-- ⚡ **Performance Optimization**: Built-in index creation for faster queries
-- 📍 **Shortest Path Queries**: Find optimal paths in road networks or any connected graph
+## What Is This?
+
+**AGE Graph Manager** combines three technologies into one tool:
+
+| Layer | Technology | Role |
+|-------|-----------|------|
+| **Backend** | Flask (Python) | REST API + server-side rendering |
+| **Database** | PostgreSQL + Apache AGE | Graph storage using OpenCypher queries |
+| **AI** | Azure OpenAI (GPT-4o) | Translates plain English into Cypher queries |
+
+Users can create graphs, add nodes and edges with typed properties, visualize the data interactively, detect anomalies, and query the graph in natural language — all from the browser.
+
+---
+
+## Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Multi-Graph Management** | Create, select, and switch between multiple independent graphs |
+| **Node CRUD** | Create/read/update/delete nodes with labels and typed properties (string, int, float, boolean) |
+| **Edge CRUD** | Create/read/update/delete relationships between nodes with properties |
+| **Interactive Visualization** | vis.js-powered graph rendering with zoom, drag, color-coded labels, adjustable node limits |
+| **Natural Language Queries** | Ask questions in English; Azure OpenAI generates the Cypher; review/edit before execution |
+| **Dual Result Views** | Query results displayed as tables or interactive graph visualizations |
+| **Anomaly Detection** | Identify isolated nodes, hub nodes, low-degree nodes, and missing connections |
+| **Demo Data Generators** | One-command scripts to create road networks (25 cities) or social networks (100 people, 10 sports, 10 companies) |
+| **Index Optimization** | Automated BTREE + GIN index creation across all graphs |
+| **RESTful API** | Full JSON API for programmatic access to all operations |
+
+---
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Browser (Bootstrap 5)                 │
+│  ┌──────────┐ ┌──────────┐ ┌────────┐ ┌──────────────┐ │
+│  │  Nodes   │ │  Edges   │ │ Graph  │ │  NL Query    │ │
+│  │  CRUD    │ │  CRUD    │ │ Vis.js │ │  Interface   │ │
+│  └────┬─────┘ └────┬─────┘ └───┬────┘ └──────┬───────┘ │
+└───────┼────────────┼───────────┼──────────────┼─────────┘
+        │            │           │              │
+        ▼            ▼           ▼              ▼
+┌─────────────────────────────────────────────────────────┐
+│                 Flask REST API (app.py)                  │
+│  /api/nodes  /api/edges  /api/graph-data  /api/natural  │
+└──────────┬──────────────────────────────┬───────────────┘
+           │                              │
+           ▼                              ▼
+┌─────────────────────┐    ┌──────────────────────────────┐
+│  GraphUtils         │    │  OpenAIHelper                │
+│  (graph_utils.py)   │    │  (openai_helper.py)          │
+│  Cypher execution   │◄───│  NL → Cypher via GPT-4o     │
+│  Type handling       │    │  Schema-aware prompting      │
+└──────────┬──────────┘    └──────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────────┐
+│           PostgreSQL + Apache AGE Extension              │
+│           OpenCypher queries on graph data               │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
 
 ## Prerequisites
 
 - Python 3.8+
 - PostgreSQL 12+ with Apache AGE extension installed
-- Azure OpenAI account (for natural language queries)
+- Azure OpenAI account (optional — needed for natural language queries)
 - pip (Python package manager)
 
 ## Installation

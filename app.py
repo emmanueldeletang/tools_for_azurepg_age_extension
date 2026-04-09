@@ -76,6 +76,15 @@ def query():
         return redirect(url_for('index'))
     return render_template('query.html', current_graph=current_graph)
 
+@app.route('/anomalies')
+def anomalies():
+    """Anomaly detection page"""
+    current_graph = session.get('graph_name')
+    if not current_graph:
+        flash('Please select a graph first', 'warning')
+        return redirect(url_for('index'))
+    return render_template('anomalies.html', current_graph=current_graph)
+
 # API Routes
 
 @app.route('/api/graphs', methods=['GET'])
@@ -241,6 +250,31 @@ def api_graph_data():
     
     graph_utils.set_graph(current_graph)
     result = graph_utils.get_graph_data()
+    return jsonify(result)
+
+@app.route('/api/anomalies/detect', methods=['GET'])
+def api_detect_anomalies():
+    """Detect graph anomalies"""
+    current_graph = session.get('graph_name')
+    if not current_graph:
+        return jsonify({"error": "No graph selected"}), 400
+    
+    graph_utils.set_graph(current_graph)
+    result = graph_utils.detect_anomalies()
+    return jsonify(result)
+
+@app.route('/api/anomalies/indirect-connections', methods=['GET'])
+def api_indirect_connections():
+    """Find indirect connections between nodes"""
+    current_graph = session.get('graph_name')
+    if not current_graph:
+        return jsonify({"error": "No graph selected"}), 400
+    
+    graph_utils.set_graph(current_graph)
+    node_id = request.args.get('node_id', type=int)
+    max_depth = request.args.get('max_depth', default=3, type=int)
+    
+    result = graph_utils.find_indirect_connections(node_id, max_depth)
     return jsonify(result)
 
 @app.route('/api/natural-query/translate', methods=['POST'])
