@@ -25,6 +25,20 @@
     </div>
 </div>
 
+<div class="row mb-3">
+    <div class="col-md-12">
+        <div class="alert alert-info">
+            <h6 class="alert-heading"><i class="bi bi-info-circle"></i> About Edge Editing</h6>
+            <p class="mb-0">
+                <strong>Note:</strong> In graph databases, edges are directional relationships between specific nodes. 
+                When editing an edge, you can only modify its <strong>properties</strong>. 
+                The source node, target node, and edge label (relationship type) cannot be changed after creation. 
+                To change these, delete the edge and create a new one.
+            </p>
+        </div>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-md-6">
         <h2>Create Edge</h2>
@@ -294,16 +308,32 @@ function displayEdgePage() {
             const edgeLabel = edgeData.label || 'CONNECTED';
             const edgeId = edgeData.id;
             const edgeProperties = edgeData.properties || {};
+            const fromProperties = fromNode.properties || {};
+            const toProperties = toNode.properties || {};
+            
+            // Get display name for nodes (prefer name, title, or other meaningful property)
+            const fromName = fromProperties.name || fromProperties.title || fromProperties.label || `${fromLabel} (${fromNode.id})`;
+            const toName = toProperties.name || toProperties.title || toProperties.label || `${toLabel} (${toNode.id})`;
+            
+            // Format edge properties for display
+            const propsDisplay = Object.keys(edgeProperties).length > 0 
+                ? Object.entries(edgeProperties).map(([k, v]) => `${k}: ${v}`).join(', ')
+                : 'No properties';
             
             return `<div class="list-group-item">
                 <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <strong>${fromLabel} (${fromNode.id})</strong> 
-                        -[${edgeLabel}]-> 
-                        <strong>${toLabel} (${toNode.id})</strong>
-                        <div class="small text-muted">Edge ID: ${edgeId} | Properties: ${JSON.stringify(edgeProperties)}</div>
+                    <div class="flex-grow-1">
+                        <div class="mb-1">
+                            <strong>${fromName}</strong> 
+                            <span class="text-muted">-[${edgeLabel}]-></span> 
+                            <strong>${toName}</strong>
+                        </div>
+                        <div class="small">
+                            <span class="badge bg-secondary me-1">${propsDisplay}</span>
+                            <span class="text-muted">Edge ID: ${edgeId}</span>
+                        </div>
                     </div>
-                    <div class="btn-group btn-group-sm" role="group">
+                    <div class="btn-group btn-group-sm ms-2" role="group">
                         <button class="btn btn-outline-primary" onclick="editEdge(${edgeId}, ${fromNode.id}, ${toNode.id}, '${edgeLabel}', ${JSON.stringify(edgeProperties).replace(/"/g, '&quot;')})">Edit</button>
                         <button class="btn btn-outline-danger" onclick="deleteEdge(${edgeId})">Delete</button>
                     </div>
@@ -452,7 +482,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const to_node_id = parseInt(document.getElementById('toNode').value);
         const label = document.getElementById('edgeLabel').value;
         
-        if (!from_node_id || !to_node_id) {
+        if (!isUpdateMode && (!from_node_id || !to_node_id)) {
             alert('Please select both source and target nodes');
             return;
         }
@@ -467,10 +497,16 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
         });
         
+        // In update mode, require at least one property
+        if (isUpdateMode && Object.keys(properties).length === 0) {
+            alert('Please provide at least one property to update');
+            return;
+        }
+        
         try {
             let response;
             if (isUpdateMode) {
-                // Update existing edge
+                // Update existing edge - only properties can be updated
                 response = await fetch(`/api/edges/${edgeId}`, {
                     method: 'PUT',
                     headers: {'Content-Type': 'application/json'},
@@ -489,22 +525,32 @@ document.addEventListener('DOMContentLoaded', async function() {
             const resultDiv = document.getElementById('edgeResult');
             
             if (result.error) {
-                resultDiv.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+                resultDiv.innerHTML = `<div class="alert alert-danger"><strong>Error:</strong> ${result.error}</div>`;
             } else {
-                const message = isUpdateMode ? 'Edge updated successfully!' : 'Edge created successfully!';
+                const message = isUpdateMode ? 'Edge properties updated successfully!' : 'Edge created successfully!';
                 resultDiv.innerHTML = `<div class="alert alert-success">${message}</div>`;
                 
                 if (isUpdateMode) {
-                    cancelEditEdge();
+                    // Wait a bit before canceling to show success message
+                    setTimeout(() => {
+                        cancelEditEdge();
+                    }, 1500);
                 } else {
                     document.getElementById('edgeForm').reset();
                 }
                 
                 loadEdges();
+                
+                // Clear success message after a few seconds
+                setTimeout(() => {
+                    if (!isUpdateMode) {
+                        resultDiv.innerHTML = '';
+                    }
+                }, 3000);
             }
         } catch (error) {
             document.getElementById('edgeResult').innerHTML = 
-                `<div class="alert alert-danger">Error: ${error.message}</div>`;
+                `<div class="alert alert-danger"><strong>Error:</strong> ${error.message}</div>`;
         }
     });
     
@@ -525,7 +571,7 @@ function editEdge(edgeId, fromNodeId, toNodeId, edgeLabel, properties) {
     document.getElementById('toNode').value = toNodeId;
     document.getElementById('edgeLabel').value = edgeLabel;
     
-    // Disable node selectors during edit
+    // Disable node selectors during edit (edges cannot change source/target/label)
     document.getElementById('fromNode').disabled = true;
     document.getElementById('toNode').disabled = true;
     document.getElementById('edgeLabel').disabled = true;
@@ -534,32 +580,60 @@ function editEdge(edgeId, fromNodeId, toNodeId, edgeLabel, properties) {
     const container = document.getElementById('edgePropertiesContainer');
     container.innerHTML = '';
     
-    Object.entries(properties).forEach(([key, value]) => {
+    // If no properties exist, add at least one empty row
+    if (Object.keys(properties).length === 0) {
         const propertyRow = document.createElement('div');
         propertyRow.className = 'row mb-2 property-row';
         propertyRow.innerHTML = `
             <div class="col-5">
-                <input type="text" class="form-control property-key" value="${key}" placeholder="Key">
+                <input type="text" class="form-control property-key" placeholder="Key">
             </div>
             <div class="col-5">
-                <input type="text" class="form-control property-value" value="${value}" placeholder="Value">
+                <input type="text" class="form-control property-value" placeholder="Value">
             </div>
             <div class="col-2">
                 <button type="button" class="btn btn-sm btn-danger remove-property">Remove</button>
             </div>
         `;
         container.appendChild(propertyRow);
-    });
+    } else {
+        Object.entries(properties).forEach(([key, value]) => {
+            const propertyRow = document.createElement('div');
+            propertyRow.className = 'row mb-2 property-row';
+            propertyRow.innerHTML = `
+                <div class="col-5">
+                    <input type="text" class="form-control property-key" value="${key}" placeholder="Key">
+                </div>
+                <div class="col-5">
+                    <input type="text" class="form-control property-value" value="${value}" placeholder="Value">
+                </div>
+                <div class="col-2">
+                    <button type="button" class="btn btn-sm btn-danger remove-property">Remove</button>
+                </div>
+            `;
+            container.appendChild(propertyRow);
+        });
+    }
     
     // Change form to update mode
     const form = document.getElementById('edgeForm');
     form.dataset.mode = 'update';
     form.dataset.edgeId = edgeId;
     
-    // Change button text
+    // Change button text and add info message
     const submitBtn = form.querySelector('button[type="submit"]');
-    submitBtn.textContent = 'Update Edge';
+    submitBtn.textContent = 'Update Edge Properties';
     submitBtn.className = 'btn btn-warning';
+    
+    // Add info message about editing limitations
+    let infoMsg = document.getElementById('editInfoMsg');
+    if (!infoMsg) {
+        infoMsg = document.createElement('div');
+        infoMsg.id = 'editInfoMsg';
+        infoMsg.className = 'alert alert-info mt-3';
+        infoMsg.innerHTML = '<strong>Edit Mode:</strong> You can only modify edge properties. Source node, target node, and edge label cannot be changed.';
+        form.insertBefore(infoMsg, form.querySelector('.mb-3'));
+    }
     
     // Add cancel button
     let cancelBtn = document.getElementById('cancelEditEdgeBtn');
@@ -597,6 +671,15 @@ function cancelEditEdge() {
     if (cancelBtn) {
         cancelBtn.remove();
     }
+    
+    // Remove info message
+    const infoMsg = document.getElementById('editInfoMsg');
+    if (infoMsg) {
+        infoMsg.remove();
+    }
+    
+    // Clear result message
+    document.getElementById('edgeResult').innerHTML = '';
 }
 
 // Delete edge function

@@ -1,0 +1,979 @@
+{% extends "base.html" %}
+
+{% block title %}Anomaly Detection - AGE Graph Manager{% endblock %}
+
+{% block extra_css %}
+<style>
+    .anomaly-card {
+        border-left: 4px solid;
+        margin-bottom: 15px;
+        transition: transform 0.2s;
+    }
+    
+    .anomaly-card:hover {
+        transform: translateX(5px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+    
+    .severity-high { border-left-color: #dc3545; }
+    .severity-medium { border-left-color: #ffc107; }
+    .severity-low { border-left-color: #17a2b8; }
+    
+    .badge-severity-high { background-color: #dc3545; }
+    .badge-severity-medium { background-color: #ffc107; color: #000; }
+    .badge-severity-low { background-color: #17a2b8; }
+    
+    .stats-card {
+        border-radius: 10px;
+        padding: 20px;
+        text-align: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        margin-bottom: 20px;
+    }
+    
+    .stats-number {
+        font-size: 2.5rem;
+        font-weight: bold;
+        margin: 10px 0;
+    }
+    
+    .suggestion-item {
+        background: #f8f9fa;
+        border-left: 3px solid #28a745;
+        padding: 10px;
+        margin: 8px 0;
+        border-radius: 4px;
+    }
+    
+    .node-info {
+        font-family: 'Courier New', monospace;
+        background: #f4f4f4;
+        padding: 8px;
+        border-radius: 4px;
+        font-size: 0.9rem;
+    }
+    
+    .filter-buttons {
+        margin: 20px 0;
+    }
+    
+    .loading-spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid rgba(0,0,0,.1);
+        border-radius: 50%;
+        border-top-color: #667eea;
+        animation: spin 1s ease-in-out infinite;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    
+    #anomalyGraphContainer {
+        width: 100%;
+        height: 500px;
+        border: 2px solid #ddd;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+    }
+    
+    .graph-legend {
+        margin-top: 15px;
+        padding: 15px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .legend-item {
+        display: inline-block;
+        margin-right: 20px;
+        margin-bottom: 10px;
+    }
+    
+    .legend-color {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        margin-right: 8px;
+        vertical-align: middle;
+        border: 2px solid #333;
+    }
+    
+    .legend-line {
+        display: inline-block;
+        width: 30px;
+        height: 3px;
+        margin-right: 8px;
+        vertical-align: middle;
+    }
+    
+    .legend-label {
+        vertical-align: middle;
+        font-weight: 500;
+    }
+    
+    .graph-controls {
+        margin-bottom: 15px;
+        padding: 10px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+    
+    .query-section {
+        margin-top: 20px;
+        padding: 15px;
+        background: #1e1e1e;
+        border-radius: 8px;
+        color: #d4d4d4;
+    }
+    
+    .query-section h5 {
+        color: #569cd6;
+        margin-bottom: 15px;
+    }
+    
+    .query-block {
+        margin-bottom: 20px;
+        border: 1px solid #3c3c3c;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+    
+    .query-header {
+        background: #2d2d2d;
+        padding: 10px 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+    }
+    
+    .query-header:hover {
+        background: #383838;
+    }
+    
+    .query-title {
+        color: #4ec9b0;
+        font-weight: bold;
+        margin: 0;
+    }
+    
+    .query-badge {
+        background: #569cd6;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 0.8rem;
+    }
+    
+    .query-content {
+        padding: 15px;
+        background: #1e1e1e;
+    }
+    
+    .query-code {
+        background: #0d0d0d;
+        padding: 15px;
+        border-radius: 4px;
+        font-family: 'Consolas', 'Monaco', monospace;
+        font-size: 0.9rem;
+        color: #ce9178;
+        white-space: pre-wrap;
+        word-break: break-all;
+        overflow-x: auto;
+    }
+    
+    .query-result {
+        margin-top: 10px;
+        padding: 10px;
+        background: #252526;
+        border-radius: 4px;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    
+    .query-result-header {
+        color: #dcdcaa;
+        font-weight: bold;
+        margin-bottom: 8px;
+    }
+    
+    .result-row {
+        padding: 5px 10px;
+        margin: 3px 0;
+        background: #2d2d2d;
+        border-radius: 3px;
+        font-family: 'Consolas', monospace;
+        font-size: 0.85rem;
+    }
+    
+    .result-row:hover {
+        background: #383838;
+    }
+    
+    .result-empty {
+        color: #808080;
+        font-style: italic;
+    }
+    
+    .result-error {
+        color: #f14c4c;
+    }
+    
+    .toggle-queries-btn {
+        margin-top: 10px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h2>Graph Anomaly Detection</h2>
+        <p class="text-muted">Discover potential issues and improvement opportunities in your graph</p>
+        
+        <div class="alert alert-info">
+            <strong>ℹ️ About Anomaly Detection:</strong> This tool analyzes your graph to find isolated nodes, 
+            potential missing connections, unusual patterns, and other anomalies that might indicate data quality 
+            issues or opportunities for enhancement.
+        </div>
+        
+        <button class="btn btn-primary btn-lg" id="detectBtn">
+            <i class="bi bi-search"></i> Run Anomaly Detection
+        </button>
+        
+        <div id="loadingIndicator" class="mt-3" style="display: none;">
+            <span class="loading-spinner"></span> Analyzing graph...
+        </div>
+        
+        <!-- Graph Visualization Section -->
+        <div id="graphSection" class="mt-4" style="display: none;">
+            <h4>📊 Graph Visualization with Anomalies</h4>
+            <div class="graph-controls">
+                <div class="row">
+                    <div class="col-md-6">
+                        <label class="form-check-label me-3">
+                            <input type="checkbox" class="form-check-input" id="showMissingEdges" checked>
+                            Show suggested missing connections (dashed lines)
+                        </label>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-check-label">
+                            <input type="checkbox" class="form-check-input" id="highlightAnomalies" checked>
+                            Highlight anomaly nodes
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div id="anomalyGraphContainer"></div>
+            
+            <!-- Graph Legend -->
+            <div class="graph-legend">
+                <h6>Legend</h6>
+                <div class="row">
+                    <div class="col-md-6">
+                        <strong>Node Types:</strong><br>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background-color: #dc3545;"></span>
+                            <span class="legend-label">Isolated Node</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background-color: #ffc107;"></span>
+                            <span class="legend-label">Low Degree (1 connection)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background-color: #9b59b6;"></span>
+                            <span class="legend-label">Hub Node (high connections)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background-color: #3498db;"></span>
+                            <span class="legend-label">Normal Node</span>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Edge Types:</strong><br>
+                        <div class="legend-item">
+                            <span class="legend-line" style="background-color: #7f8c8d;"></span>
+                            <span class="legend-label">Existing Connection</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-line" style="background-color: #2ecc71; border-top: 3px dashed #2ecc71; height: 0;"></span>
+                            <span class="legend-label">Suggested Connection</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Summary Statistics -->
+        <div id="summarySection" class="row mt-4" style="display: none;">
+            <div class="col-md-12">
+                <h4>Summary</h4>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="stats-label">Isolated Nodes</div>
+                    <div class="stats-number" id="isolatedCount">0</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                    <div class="stats-label">Missing Connections</div>
+                    <div class="stats-number" id="missingCount">0</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                    <div class="stats-label">Hub Nodes</div>
+                    <div class="stats-number" id="hubCount">0</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+                    <div class="stats-label">Low Degree Nodes</div>
+                    <div class="stats-number" id="lowDegreeCount">0</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Filter Buttons -->
+        <div id="filterSection" class="filter-buttons" style="display: none;">
+            <button class="btn btn-outline-primary filter-btn" data-filter="all">All Anomalies</button>
+            <button class="btn btn-outline-danger filter-btn" data-filter="isolated">Isolated Nodes</button>
+            <button class="btn btn-outline-warning filter-btn" data-filter="missing">Missing Connections</button>
+            <button class="btn btn-outline-info filter-btn" data-filter="hub">Hub Nodes</button>
+            <button class="btn btn-outline-success filter-btn" data-filter="low">Low Degree</button>
+            <button class="btn btn-secondary toggle-queries-btn" id="toggleQueriesBtn" style="display: none;">
+                📝 Show Cypher Queries & Results
+            </button>
+        </div>
+        
+        <!-- Query Details Section -->
+        <div id="querySection" class="query-section" style="display: none;">
+            <h5>🔍 Cypher Queries & Raw Results</h5>
+            <div id="queryContainer"></div>
+        </div>
+        
+        <!-- Results Section -->
+        <div id="resultsSection" class="mt-4" style="display: none;">
+            <h4>Detected Anomalies</h4>
+            <div id="anomaliesContainer"></div>
+        </div>
+        
+        <!-- No Results -->
+        <div id="noResultsSection" class="alert alert-success mt-4" style="display: none;">
+            <strong>✓ Great!</strong> No significant anomalies detected in your graph. Your graph appears to be well-connected.
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<script>
+var currentAnomalies = null;
+var currentFilter = 'all';
+var graphData = null;
+var network = null;
+var anomalyNodeIds = {
+    isolated: [],
+    lowDegree: [],
+    highDegree: [],
+    missingConnections: []
+};
+
+document.getElementById('detectBtn').addEventListener('click', function() {
+    detectAnomalies();
+});
+
+// Checkbox controls for graph
+document.getElementById('showMissingEdges').addEventListener('change', function() {
+    if (currentAnomalies && graphData) {
+        renderAnomalyGraph();
+    }
+});
+
+document.getElementById('highlightAnomalies').addEventListener('change', function() {
+    if (currentAnomalies && graphData) {
+        renderAnomalyGraph();
+    }
+});
+
+// Filter buttons
+document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('filter-btn')) {
+        currentFilter = e.target.getAttribute('data-filter');
+        
+        // Update active button
+        document.querySelectorAll('.filter-btn').forEach(function(btn) {
+            btn.classList.remove('active');
+        });
+        e.target.classList.add('active');
+        
+        // Re-render with filter
+        if (currentAnomalies) {
+            displayAnomalies(currentAnomalies);
+        }
+    }
+});
+
+function detectAnomalies() {
+    // Show loading
+    document.getElementById('loadingIndicator').style.display = 'block';
+    document.getElementById('graphSection').style.display = 'none';
+    document.getElementById('summarySection').style.display = 'none';
+    document.getElementById('filterSection').style.display = 'none';
+    document.getElementById('resultsSection').style.display = 'none';
+    document.getElementById('noResultsSection').style.display = 'none';
+    
+    // Fetch both anomalies and graph data in parallel
+    Promise.all([
+        fetch('/api/anomalies/detect').then(function(r) { return r.json(); }),
+        fetch('/api/graph-data').then(function(r) { return r.json(); })
+    ])
+    .then(function(results) {
+        document.getElementById('loadingIndicator').style.display = 'none';
+        
+        var anomalyResult = results[0];
+        var graphResult = results[1];
+        
+        if (anomalyResult.error) {
+            alert('Error: ' + anomalyResult.error);
+            return;
+        }
+        
+        currentAnomalies = anomalyResult.anomalies;
+        graphData = graphResult;
+        
+        // Store queries info
+        if (anomalyResult.queries) {
+            displayQueries(anomalyResult.queries, anomalyResult.graph_name);
+            document.getElementById('toggleQueriesBtn').style.display = 'inline-block';
+        }
+        
+        // Build anomaly node ID sets
+        buildAnomalyNodeSets(currentAnomalies);
+        
+        displaySummary(currentAnomalies);
+        displayAnomalies(currentAnomalies);
+        
+        // Render the graph visualization
+        if (graphData && !graphData.error) {
+            document.getElementById('graphSection').style.display = 'block';
+            renderAnomalyGraph();
+        }
+    })
+    .catch(function(error) {
+        document.getElementById('loadingIndicator').style.display = 'none';
+        alert('Error detecting anomalies: ' + error.message);
+    });
+}
+
+// Toggle queries section
+document.getElementById('toggleQueriesBtn').addEventListener('click', function() {
+    var querySection = document.getElementById('querySection');
+    if (querySection.style.display === 'none') {
+        querySection.style.display = 'block';
+        this.textContent = '📝 Hide Cypher Queries & Results';
+    } else {
+        querySection.style.display = 'none';
+        this.textContent = '📝 Show Cypher Queries & Results';
+    }
+});
+
+function displayQueries(queries, graphName) {
+    var container = document.getElementById('queryContainer');
+    var html = '<p style="color: #9cdcfe; margin-bottom: 15px;">Graph: <strong>' + graphName + '</strong></p>';
+    
+    queries.forEach(function(q, index) {
+        var resultHtml = '';
+        
+        if (q.error) {
+            resultHtml = '<div class="result-error">Error: ' + q.error + '</div>';
+        } else if (q.raw_result && q.raw_result.length > 0) {
+            resultHtml = '<div class="query-result-header">Results (' + q.count + ' rows):</div>';
+            q.raw_result.forEach(function(row, rowIndex) {
+                var rowStr = '';
+                if (Array.isArray(row)) {
+                    rowStr = row.map(function(cell) {
+                        return String(cell);
+                    }).join(' | ');
+                } else {
+                    rowStr = JSON.stringify(row);
+                }
+                resultHtml += '<div class="result-row">[' + rowIndex + '] ' + escapeHtml(rowStr) + '</div>';
+            });
+        } else {
+            resultHtml = '<div class="result-empty">No results returned</div>';
+        }
+        
+        var badgeClass = q.count > 0 ? 'query-badge' : 'query-badge" style="background: #6c757d;';
+        
+        html += '<div class="query-block">';
+        html += '<div class="query-header" onclick="toggleQueryContent(' + index + ')">';
+        html += '<span class="query-title">' + q.name + '</span>';
+        html += '<span class="' + badgeClass + '">' + q.count + ' found</span>';
+        html += '</div>';
+        html += '<div class="query-content" id="queryContent' + index + '">';
+        html += '<p style="color: #808080; margin-bottom: 10px;">' + q.description + '</p>';
+        html += '<div class="query-code">' + escapeHtml(q.query) + '</div>';
+        html += '<div class="query-result">' + resultHtml + '</div>';
+        html += '</div>';
+        html += '</div>';
+    });
+    
+    container.innerHTML = html;
+}
+
+function toggleQueryContent(index) {
+    var content = document.getElementById('queryContent' + index);
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+    } else {
+        content.style.display = 'none';
+    }
+}
+
+function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function buildAnomalyNodeSets(anomalies) {
+    anomalyNodeIds = {
+        isolated: [],
+        lowDegree: [],
+        highDegree: [],
+        missingConnections: []
+    };
+    
+    anomalies.isolated_nodes.forEach(function(node) {
+        anomalyNodeIds.isolated.push(node.id);
+    });
+    
+    anomalies.low_degree_nodes.forEach(function(node) {
+        anomalyNodeIds.lowDegree.push(node.id);
+    });
+    
+    anomalies.high_degree_nodes.forEach(function(node) {
+        anomalyNodeIds.highDegree.push(node.id);
+    });
+    
+    anomalies.potential_missing_connections.forEach(function(conn) {
+        if (anomalyNodeIds.missingConnections.indexOf(conn.node_a.id) === -1) {
+            anomalyNodeIds.missingConnections.push(conn.node_a.id);
+        }
+        if (anomalyNodeIds.missingConnections.indexOf(conn.node_b.id) === -1) {
+            anomalyNodeIds.missingConnections.push(conn.node_b.id);
+        }
+    });
+}
+
+function renderAnomalyGraph() {
+    var container = document.getElementById('anomalyGraphContainer');
+    var showMissing = document.getElementById('showMissingEdges').checked;
+    var highlightAnomalies = document.getElementById('highlightAnomalies').checked;
+    
+    var visNodes = [];
+    var visEdges = [];
+    var nodeIdSet = new Set();
+    
+    // Process nodes from graph data
+    (graphData.nodes || []).forEach(function(node) {
+        try {
+            var nodeStr = node[0].split('::')[0].trim();
+            var nodeData = JSON.parse(nodeStr);
+            var nodeId = nodeData.id;
+            var label = nodeData.label || 'Node';
+            var properties = nodeData.properties || {};
+            var displayName = properties.name || properties.title || label;
+            
+            nodeIdSet.add(nodeId);
+            
+            // Determine node color based on anomaly type
+            var nodeColor = '#3498db'; // Default blue
+            var borderColor = '#2980b9';
+            var borderWidth = 2;
+            var shape = 'box';
+            
+            if (highlightAnomalies) {
+                if (anomalyNodeIds.isolated.indexOf(nodeId) !== -1) {
+                    nodeColor = '#dc3545'; // Red for isolated
+                    borderColor = '#a71d2a';
+                    borderWidth = 4;
+                    shape = 'diamond';
+                } else if (anomalyNodeIds.highDegree.indexOf(nodeId) !== -1) {
+                    nodeColor = '#9b59b6'; // Purple for hub nodes
+                    borderColor = '#7d3c98';
+                    borderWidth = 4;
+                    shape = 'star';
+                } else if (anomalyNodeIds.lowDegree.indexOf(nodeId) !== -1) {
+                    nodeColor = '#ffc107'; // Yellow for low degree
+                    borderColor = '#d39e00';
+                    borderWidth = 3;
+                }
+            }
+            
+            visNodes.push({
+                id: nodeId,
+                label: displayName,
+                title: label + ' (ID: ' + nodeId + ')\n' + JSON.stringify(properties, null, 2),
+                color: {
+                    background: nodeColor,
+                    border: borderColor,
+                    highlight: {
+                        background: lightenColor(nodeColor),
+                        border: nodeColor
+                    }
+                },
+                borderWidth: borderWidth,
+                shape: shape,
+                font: { color: '#ffffff', size: 12 }
+            });
+        } catch (e) {
+            console.error('Error parsing node:', e);
+        }
+    });
+    
+    // Process existing edges
+    (graphData.edges || []).forEach(function(edge) {
+        try {
+            var fromStr = edge[0].split('::')[0].trim();
+            var edgeStr = edge[1].split('::')[0].trim();
+            var toStr = edge[2].split('::')[0].trim();
+            
+            var fromNode = JSON.parse(fromStr);
+            var edgeData = JSON.parse(edgeStr);
+            var toNode = JSON.parse(toStr);
+            
+            visEdges.push({
+                id: edgeData.id,
+                from: fromNode.id,
+                to: toNode.id,
+                label: edgeData.label || '',
+                arrows: 'to',
+                color: { color: '#7f8c8d', highlight: '#34495e' },
+                width: 2
+            });
+        } catch (e) {
+            console.error('Error parsing edge:', e);
+        }
+    });
+    
+    // Add suggested missing connections as dashed edges
+    if (showMissing && currentAnomalies) {
+        currentAnomalies.potential_missing_connections.forEach(function(conn, index) {
+            var fromId = conn.node_a.id;
+            var toId = conn.node_b.id;
+            
+            // Only add if both nodes are in the graph
+            if (nodeIdSet.has(fromId) && nodeIdSet.has(toId)) {
+                visEdges.push({
+                    id: 'suggested_' + index,
+                    from: fromId,
+                    to: toId,
+                    label: '? (' + conn.indirect_paths + ' paths)',
+                    arrows: '',
+                    dashes: [5, 5],
+                    color: { color: '#2ecc71', highlight: '#27ae60' },
+                    width: 3,
+                    font: { color: '#2ecc71', size: 10, background: 'white' },
+                    title: 'Suggested connection: ' + conn.indirect_paths + ' indirect path(s) exist'
+                });
+            }
+        });
+    }
+    
+    var data = {
+        nodes: new vis.DataSet(visNodes),
+        edges: new vis.DataSet(visEdges)
+    };
+    
+    var options = {
+        nodes: {
+            shape: 'box',
+            margin: 10,
+            font: { size: 12, color: '#ffffff' },
+            borderWidth: 2,
+            shadow: true
+        },
+        edges: {
+            width: 2,
+            shadow: true,
+            smooth: { type: 'curvedCW', roundness: 0.2 },
+            font: { size: 10, align: 'middle' }
+        },
+        physics: {
+            stabilization: { iterations: 150 },
+            barnesHut: {
+                gravitationalConstant: -5000,
+                springLength: 150,
+                springConstant: 0.04
+            }
+        },
+        interaction: {
+            hover: true,
+            navigationButtons: true,
+            keyboard: true,
+            tooltipDelay: 200
+        }
+    };
+    
+    network = new vis.Network(container, data, options);
+    
+    // Click event to highlight related anomalies
+    network.on('click', function(params) {
+        if (params.nodes.length > 0) {
+            var nodeId = params.nodes[0];
+            highlightNodeAnomalies(nodeId);
+        }
+    });
+}
+
+function highlightNodeAnomalies(nodeId) {
+    // Find and scroll to anomalies related to this node
+    var found = false;
+    
+    if (anomalyNodeIds.isolated.indexOf(nodeId) !== -1) {
+        found = true;
+        currentFilter = 'isolated';
+    } else if (anomalyNodeIds.lowDegree.indexOf(nodeId) !== -1) {
+        found = true;
+        currentFilter = 'low';
+    } else if (anomalyNodeIds.highDegree.indexOf(nodeId) !== -1) {
+        found = true;
+        currentFilter = 'hub';
+    } else if (anomalyNodeIds.missingConnections.indexOf(nodeId) !== -1) {
+        found = true;
+        currentFilter = 'missing';
+    }
+    
+    if (found && currentAnomalies) {
+        document.querySelectorAll('.filter-btn').forEach(function(btn) {
+            btn.classList.remove('active');
+            if (btn.getAttribute('data-filter') === currentFilter) {
+                btn.classList.add('active');
+            }
+        });
+        displayAnomalies(currentAnomalies);
+        
+        // Scroll to results
+        document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+    }
+}
+
+function lightenColor(color) {
+    if (color.startsWith('#')) {
+        var num = parseInt(color.replace('#', ''), 16);
+        var amt = 40;
+        var R = Math.min((num >> 16) + amt, 255);
+        var G = Math.min((num >> 8 & 0x00FF) + amt, 255);
+        var B = Math.min((num & 0x0000FF) + amt, 255);
+        return '#' + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
+    }
+    return color;
+}
+
+function displaySummary(anomalies) {
+    document.getElementById('isolatedCount').textContent = anomalies.isolated_nodes.length;
+    document.getElementById('missingCount').textContent = anomalies.potential_missing_connections.length;
+    document.getElementById('hubCount').textContent = anomalies.high_degree_nodes.length;
+    document.getElementById('lowDegreeCount').textContent = anomalies.low_degree_nodes.length;
+    
+    document.getElementById('summarySection').style.display = 'flex';
+    document.getElementById('filterSection').style.display = 'block';
+}
+
+function displayAnomalies(anomalies) {
+    var container = document.getElementById('anomaliesContainer');
+    container.innerHTML = '';
+    
+    var totalAnomalies = 0;
+    var displayedAnomalies = 0;
+    
+    // Isolated Nodes
+    if (currentFilter === 'all' || currentFilter === 'isolated') {
+        anomalies.isolated_nodes.forEach(function(anomaly) {
+            totalAnomalies++;
+            if (currentFilter === 'all' || currentFilter === 'isolated') {
+                displayedAnomalies++;
+                container.innerHTML += createAnomalyCard(
+                    'Isolated Node',
+                    anomaly.description,
+                    anomaly.severity,
+                    formatNodeInfo(anomaly),
+                    [
+                        'This node has no connections to other nodes',
+                        'Consider creating relationships to integrate it into the graph',
+                        'Verify if this node is still relevant'
+                    ]
+                );
+            }
+        });
+    }
+    
+    // Potential Missing Connections
+    if (currentFilter === 'all' || currentFilter === 'missing') {
+        anomalies.potential_missing_connections.forEach(function(anomaly) {
+            totalAnomalies++;
+            if (currentFilter === 'all' || currentFilter === 'missing') {
+                displayedAnomalies++;
+                container.innerHTML += createMissingConnectionCard(anomaly);
+            }
+        });
+    }
+    
+    // High Degree Nodes
+    if (currentFilter === 'all' || currentFilter === 'hub') {
+        anomalies.high_degree_nodes.forEach(function(anomaly) {
+            totalAnomalies++;
+            if (currentFilter === 'all' || currentFilter === 'hub') {
+                displayedAnomalies++;
+                container.innerHTML += createAnomalyCard(
+                    'Hub Node',
+                    anomaly.description,
+                    anomaly.severity,
+                    formatNodeInfo(anomaly),
+                    [
+                        'This node has many connections (' + anomaly.degree + ')',
+                        'Consider if all connections are necessary',
+                        'May be a bottleneck or critical point of failure'
+                    ]
+                );
+            }
+        });
+    }
+    
+    // Low Degree Nodes
+    if (currentFilter === 'all' || currentFilter === 'low') {
+        anomalies.low_degree_nodes.forEach(function(anomaly) {
+            totalAnomalies++;
+            if (currentFilter === 'all' || currentFilter === 'low') {
+                displayedAnomalies++;
+                container.innerHTML += createAnomalyCard(
+                    'Low Degree Node',
+                    anomaly.description,
+                    anomaly.severity,
+                    formatNodeInfo(anomaly),
+                    [
+                        'This node has only one connection',
+                        'Consider if additional relationships should exist',
+                        'Verify data completeness'
+                    ]
+                );
+            }
+        });
+    }
+    
+    if (displayedAnomalies === 0) {
+        if (totalAnomalies === 0) {
+            document.getElementById('noResultsSection').style.display = 'block';
+        } else {
+            container.innerHTML = '<div class="alert alert-info">No anomalies match the current filter.</div>';
+        }
+    }
+    
+    document.getElementById('resultsSection').style.display = 'block';
+}
+
+function createAnomalyCard(title, description, severity, nodeInfo, suggestions) {
+    return `
+        <div class="card anomaly-card severity-${severity}">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <h5 class="card-title">${title}</h5>
+                    <span class="badge badge-severity-${severity}">${severity.toUpperCase()}</span>
+                </div>
+                <p class="card-text">${description}</p>
+                <div class="node-info mb-3">
+                    ${nodeInfo}
+                </div>
+                <div class="suggestions">
+                    <strong>💡 Suggestions:</strong>
+                    <ul>
+                        ${suggestions.map(function(s) { return '<li>' + s + '</li>'; }).join('')}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function createMissingConnectionCard(anomaly) {
+    var nodeA = anomaly.node_a;
+    var nodeB = anomaly.node_b;
+    
+    return `
+        <div class="card anomaly-card severity-${anomaly.severity}">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <h5 class="card-title">Potential Missing Connection</h5>
+                    <span class="badge badge-severity-${anomaly.severity}">${anomaly.severity.toUpperCase()}</span>
+                </div>
+                <p class="card-text">${anomaly.description}</p>
+                
+                <div class="row">
+                    <div class="col-md-5">
+                        <div class="node-info">
+                            <strong>${nodeA.label}</strong> (ID: ${nodeA.id})<br>
+                            ${formatProperties(nodeA.properties)}
+                        </div>
+                    </div>
+                    <div class="col-md-2 text-center" style="padding-top: 20px;">
+                        <strong>⟷</strong><br>
+                        <small>${anomaly.indirect_paths} paths</small>
+                    </div>
+                    <div class="col-md-5">
+                        <div class="node-info">
+                            <strong>${nodeB.label}</strong> (ID: ${nodeB.id})<br>
+                            ${formatProperties(nodeB.properties)}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="suggestions mt-3">
+                    <strong>💡 Suggestion:</strong>
+                    <ul>
+                        <li>These nodes have ${anomaly.indirect_paths} indirect connection(s) but no direct edge</li>
+                        <li>Consider adding a direct relationship if it makes semantic sense</li>
+                        <li>Review the indirect paths to understand the relationship</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function formatNodeInfo(node) {
+    var html = '<strong>' + (node.label || 'Unknown') + '</strong> (ID: ' + node.id + ')';
+    if (node.properties && Object.keys(node.properties).length > 0) {
+        html += '<br>' + formatProperties(node.properties);
+    }
+    return html;
+}
+
+function formatProperties(props) {
+    if (!props || Object.keys(props).length === 0) {
+        return '<em>No properties</em>';
+    }
+    
+    var formatted = [];
+    for (var key in props) {
+        var value = props[key];
+        if (typeof value === 'string' && value.length > 50) {
+            value = value.substring(0, 47) + '...';
+        }
+        formatted.push(key + ': ' + value);
+    }
+    return formatted.join(', ');
+}
+</script>
+{% endblock %}
