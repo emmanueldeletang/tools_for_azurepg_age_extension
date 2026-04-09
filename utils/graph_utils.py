@@ -412,3 +412,288 @@ class GraphUtils:
     def set_graph(self, graph_name):
         """Set the active graph name"""
         self.graph_name = graph_name
+    
+    def detect_anomalies(self):
+        """
+        Detect various types of anomalies in the graph
+        
+        Returns:
+            Dictionary containing different types of anomalies
+        """
+        if not self.age_enabled:
+            return {"error": "AGE is not enabled"}
+        
+        anomalies = {
+            "isolated_nodes": [],
+            "high_degree_nodes": [],
+            "low_degree_nodes": [],
+            "potential_missing_connections": [],
+            "orphan_edges": []
+        }
+        
+        # Store queries and raw results for debugging
+        queries_info = []
+        
+        try:
+            # Find isolated nodes (nodes with no connections)
+            isolated_query = f"""
+            SELECT * FROM cypher('{self.graph_name}', $$
+                MATCH (n)
+                OPTIONAL MATCH (n)-[r]-()
+                WITH n, count(r) AS degree
+                WHERE degree = 0
+                RETURN n, id(n) as node_id, labels(n) as labels
+            $$) as (node agtype, node_id agtype, labels agtype);
+            """
+            isolated_result = self.execute_cypher(isolated_query)
+            
+            # Store query info
+            queries_info.append({
+                'name': 'Isolated Nodes Detection',
+                'description': 'Finds nodes that have no connections (edges) to any other node',
+                'query': isolated_query.strip(),
+                'raw_result': isolated_result.get('result', []) if isolated_result.get('success') else [],
+                'error': isolated_result.get('error'),
+                'count': len(isolated_result.get('result', [])) if isolated_result.get('success') else 0
+            })
+            
+            if isolated_result.get('success'):
+                for row in isolated_result.get('result', []):
+                    try:
+                        import json
+                        node_str = str(row[0]).split('::')[0].strip()
+                        node_data = json.loads(node_str)
+                        anomalies['isolated_nodes'].append({
+                            'id': node_data.get('id'),
+                            'label': node_data.get('label'),
+                            'properties': node_data.get('properties', {}),
+                            'severity': 'medium',
+                            'description': 'Node has no connections',
+                            'raw_data': str(row[0])  # Include raw data for debugging
+                        })
+                    except Exception as e:
+                        continue
+            
+            # Find nodes with unusually high degree (hub nodes)
+            high_degree_query = f"""
+            SELECT * FROM cypher('{self.graph_name}', $$
+                MATCH (n)
+                OPTIONAL MATCH (n)-[r]-()
+                WITH n, count(r) AS degree
+                WHERE degree > 10
+                RETURN n, id(n) as node_id, labels(n) as labels, degree
+                ORDER BY degree DESC
+                LIMIT 20
+            $$) as (node agtype, node_id agtype, labels agtype, degree agtype);
+            """
+            high_degree_result = self.execute_cypher(high_degree_query)
+            
+            queries_info.append({
+                'name': 'High Degree Nodes (Hub Nodes)',
+                'description': 'Finds nodes with more than 10 connections - potential hubs or bottlenecks',
+                'query': high_degree_query.strip(),
+                'raw_result': high_degree_result.get('result', []) if high_degree_result.get('success') else [],
+                'error': high_degree_result.get('error'),
+                'count': len(high_degree_result.get('result', [])) if high_degree_result.get('success') else 0
+            })
+            
+            if high_degree_result.get('success'):
+                for row in high_degree_result.get('result', []):
+                    try:
+                        import json
+                        node_str = str(row[0]).split('::')[0].strip()
+                        node_data = json.loads(node_str)
+                        degree = int(str(row[3]))
+                        anomalies['high_degree_nodes'].append({
+                            'id': node_data.get('id'),
+                            'label': node_data.get('label'),
+                            'properties': node_data.get('properties', {}),
+                            'degree': degree,
+                            'severity': 'low',
+                            'description': f'Node has {degree} connections - potential hub or bottleneck'
+                        })
+                    except Exception as e:
+                        continue
+            
+            # Find nodes with exactly 1 connection (potential data quality issue)
+            low_degree_query = f"""
+            SELECT * FROM cypher('{self.graph_name}', $$
+                MATCH (n)
+                OPTIONAL MATCH (n)-[r]-()
+                WITH n, count(r) AS degree
+                WHERE degree = 1
+                RETURN n, id(n) as node_id, labels(n) as labels, degree
+                LIMIT 50
+            $$) as (node agtype, node_id agtype, labels agtype, degree agtype);
+            """
+            low_degree_result = self.execute_cypher(low_degree_query)
+            
+            queries_info.append({
+                'name': 'Low Degree Nodes',
+                'description': 'Finds nodes with exactly 1 connection - may indicate incomplete data',
+                'query': low_degree_query.strip(),
+                'raw_result': low_degree_result.get('result', []) if low_degree_result.get('success') else [],
+                'error': low_degree_result.get('error'),
+                'count': len(low_degree_result.get('result', [])) if low_degree_result.get('success') else 0
+            })
+            
+            if low_degree_result.get('success'):
+                for row in low_degree_result.get('result', []):
+                    try:
+                        import json
+                        node_str = str(row[0]).split('::')[0].strip()
+                        node_data = json.loads(node_str)
+                        anomalies['low_degree_nodes'].append({
+                            'id': node_data.get('id'),
+                            'label': node_data.get('label'),
+                            'properties': node_data.get('properties', {}),
+                            'degree': 1,
+                            'severity': 'low',
+                            'description': 'Node has only 1 connection - may be incomplete'
+                        })
+                    except Exception as e:
+                        continue
+            
+            # Find potential missing connections (nodes with indirect but no direct connection)
+            # This finds pairs of nodes that have 2-hop paths but no direct edge
+            indirect_query = f"""
+            SELECT * FROM cypher('{self.graph_name}', $$
+                MATCH (a)-[]-(m)-[]-(b)
+                WHERE id(a) < id(b)
+                WITH a, b, count(m) AS indirect_paths
+                WHERE indirect_paths >= 2
+                OPTIONAL MATCH (a)-[direct]-(b)
+                WITH a, b, indirect_paths, count(direct) AS direct_count
+                WHERE direct_count = 0
+                RETURN a, b, indirect_paths
+                ORDER BY indirect_paths DESC
+                LIMIT 30
+            $$) as (node_a agtype, node_b agtype, paths agtype);
+            """
+            indirect_result = self.execute_cypher(indirect_query)
+            
+            queries_info.append({
+                'name': 'Potential Missing Connections',
+                'description': 'Finds pairs of nodes connected by 2+ indirect paths but no direct edge',
+                'query': indirect_query.strip(),
+                'raw_result': indirect_result.get('result', []) if indirect_result.get('success') else [],
+                'error': indirect_result.get('error'),
+                'count': len(indirect_result.get('result', [])) if indirect_result.get('success') else 0
+            })
+            
+            if indirect_result.get('success'):
+                for row in indirect_result.get('result', []):
+                    try:
+                        import json
+                        node_a_str = str(row[0]).split('::')[0].strip()
+                        node_b_str = str(row[1]).split('::')[0].strip()
+                        node_a = json.loads(node_a_str)
+                        node_b = json.loads(node_b_str)
+                        paths = int(str(row[2]))
+                        
+                        anomalies['potential_missing_connections'].append({
+                            'node_a': {
+                                'id': node_a.get('id'),
+                                'label': node_a.get('label'),
+                                'properties': node_a.get('properties', {})
+                            },
+                            'node_b': {
+                                'id': node_b.get('id'),
+                                'label': node_b.get('label'),
+                                'properties': node_b.get('properties', {})
+                            },
+                            'indirect_paths': paths,
+                            'severity': 'medium' if paths >= 3 else 'low',
+                            'description': f'{paths} indirect path(s) exist but no direct connection'
+                        })
+                    except Exception as e:
+                        continue
+            
+            return {
+                "success": True, 
+                "anomalies": anomalies,
+                "queries": queries_info,
+                "graph_name": self.graph_name
+            }
+        
+        except Exception as e:
+            return {"error": str(e)}
+    
+    def find_indirect_connections(self, node_id, max_depth=3):
+        """
+        Find indirect connections for a specific node
+        
+        Args:
+            node_id: ID of the node to analyze
+            max_depth: Maximum path length to search
+        
+        Returns:
+            Dictionary with indirect connections and suggestions
+        """
+        if not self.age_enabled:
+            return {"error": "AGE is not enabled"}
+        
+        if not node_id:
+            return {"error": "node_id is required"}
+        
+        try:
+            # Get the node details
+            node_query = f"""
+            SELECT * FROM cypher('{self.graph_name}', $$
+                MATCH (n)
+                WHERE id(n) = {node_id}
+                RETURN n, labels(n) as labels
+            $$) as (node agtype, labels agtype);
+            """
+            node_result = self.execute_cypher(node_query)
+            
+            if not node_result.get('success') or not node_result.get('result'):
+                return {"error": "Node not found"}
+            
+            # Find indirect connections
+            indirect_query = f"""
+            SELECT * FROM cypher('{self.graph_name}', $$
+                MATCH (a)-[]-(m)-[]-(b)
+                WHERE id(a) = {node_id}
+                WITH a, b, count(m) AS path_count
+                OPTIONAL MATCH (a)-[direct]-(b)
+                WITH b, path_count, count(direct) AS direct_count
+                WHERE direct_count = 0
+                RETURN b, 2 AS distance, path_count
+                ORDER BY path_count DESC
+                LIMIT 30
+            $$) as (node agtype, distance agtype, path_count agtype);
+            """
+            indirect_result = self.execute_cypher(indirect_query)
+            
+            suggestions = []
+            if indirect_result.get('success'):
+                for row in indirect_result.get('result', []):
+                    try:
+                        import json
+                        node_str = str(row[0]).split('::')[0].strip()
+                        node_data = json.loads(node_str)
+                        distance = int(str(row[1]))
+                        path_count = int(str(row[2]))
+                        
+                        suggestions.append({
+                            'target_node': {
+                                'id': node_data.get('id'),
+                                'label': node_data.get('label'),
+                                'properties': node_data.get('properties', {})
+                            },
+                            'distance': distance,
+                            'path_count': path_count,
+                            'suggestion': f'Consider adding a direct connection (found {path_count} indirect path(s) of length {distance})'
+                        })
+                    except Exception as e:
+                        continue
+            
+            return {
+                "success": True,
+                "node_id": node_id,
+                "suggestions": suggestions
+            }
+        
+        except Exception as e:
+            return {"error": str(e)}
